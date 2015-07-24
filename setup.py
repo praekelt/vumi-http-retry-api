@@ -14,7 +14,9 @@ setup(
     install_requires=[
         'klein',
         'treq',
-    ],
+        'confmodel',
+        'PyYAML',
+   ],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
