@@ -54,8 +54,7 @@ API Methods
    Adds a new request to retry.
 
    :reqheader Accept: Should be ``application/json``.
-   :reqheader X-Owner-ID: The id of the owner to associate with this request. A
-   maximum of ``10000`` request retries are allowed per owner per 30 minutes.
+   :reqheader X-Owner-ID: The id of the owner to associate with this request.
 
    :jsonparam array intervals:
        The second-based intervals at which retries should be done. Defaults to
@@ -77,6 +76,8 @@ API Methods
        Optional request body.
 
    :resheader Content-Type: ``application/json``.
+
+   *Note*: A maximum of ``10000`` request retries are allowed per owner per 30 minutes. If this is exceeded, the api will send a ``429`` error response. See :ref:`example below <too-many-requests-response-example>`.
 
    **Example request**:
 
@@ -106,6 +107,9 @@ API Methods
        Content-Type: application/json
 
        {}
+
+
+.. _too-many-requests-response-example:
 
    **Example response (too many requests)**:
 
