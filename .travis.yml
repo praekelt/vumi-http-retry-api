@@ -6,6 +6,8 @@ install:
   - "pip install -r requirements.txt --use-wheel"
   - "pip install coveralls --use-wheel"
   - "pip install -e ."
+services:
+  - redis-server
 script:
   - coverage run --source=vumi_http_retry `which trial` vumi_http_retry
 after_success:
