@@ -12,6 +12,7 @@ def next_score(req):
 
 def add_request(redis, prefix, req):
     req = {
+        'owner_id': req['owner_id'],
         'timestamp': req['timestamp'],
         'attempts': req.get('attempts', 0),
         'request': req['request'],

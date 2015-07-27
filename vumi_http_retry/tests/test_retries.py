@@ -24,6 +24,7 @@ class TestRetries(TestCase):
         self.assertEqual((yield zitems(self.redis, k)), [])
 
         yield add_request(self.redis, 'foo', {
+            'owner_id': '1234',
             'timestamp': 10,
             'intervals': [50, 60],
             'request': {'foo': 23}
@@ -31,6 +32,7 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 50, {
+                'owner_id': '1234',
                 'timestamp': 10,
                 'attempts': 0,
                 'intervals': [50, 60],
@@ -39,6 +41,7 @@ class TestRetries(TestCase):
         ])
 
         yield add_request(self.redis, 'foo', {
+            'owner_id': '1234',
             'timestamp': 5,
             'intervals': [20, 90],
             'request': {'bar': 42}
@@ -46,12 +49,14 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (5 + 20, {
+                'owner_id': '1234',
                 'timestamp': 5,
                 'attempts': 0,
                 'intervals': [20, 90],
                 'request': {'bar': 42},
             }),
             (10 + 50, {
+                'owner_id': '1234',
                 'timestamp': 10,
                 'attempts': 0,
                 'intervals': [50, 60],
@@ -67,6 +72,7 @@ class TestRetries(TestCase):
         self.assertEqual((yield zitems(self.redis, k)), [])
 
         yield add_request(self.redis, 'foo', {
+            'owner_id': '1234',
             'timestamp': 10,
             'attempts': 1,
             'intervals': [50, 60],
@@ -75,6 +81,7 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 60, {
+                'owner_id': '1234',
                 'timestamp': 10,
                 'attempts': 1,
                 'intervals': [50, 60],
@@ -83,6 +90,7 @@ class TestRetries(TestCase):
         ])
 
         yield add_request(self.redis, 'foo', {
+            'owner_id': '1234',
             'timestamp': 5,
             'attempts': 2,
             'intervals': [20, 90, 100],
@@ -91,12 +99,14 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 60, {
+                'owner_id': '1234',
                 'timestamp': 10,
                 'attempts': 1,
                 'intervals': [50, 60],
                 'request': {'foo': 23},
             }),
             (5 + 100, {
+                'owner_id': '1234',
                 'timestamp': 5,
                 'attempts': 2,
                 'intervals': [20, 90, 100],
