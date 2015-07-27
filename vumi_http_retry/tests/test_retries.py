@@ -1,11 +1,10 @@
-import json
 import time
 
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import requests_key, add_request
-from vumi_http_retry.tests.redis import create_client
+from vumi_http_retry.tests.redis import create_client, zitems
 
 
 class TestRetries(TestCase):
@@ -22,27 +21,19 @@ class TestRetries(TestCase):
         yield self.redis.transport.loseConnection()
 
     @inlineCallbacks
-    def get_items(self, k):
-        returnValue([
-            ((yield self.redis.zscore(k, v)), json.loads(v))
-            for v in (yield self.redis.zrange(k, 0, -1))])
-
-    @inlineCallbacks
     def test_add_request(self):
         self.time = 10
         self.prefix = 'foo'
 
         k = requests_key('foo')
-        self.assertEqual((yield self.get_items(k)), [])
+        self.assertEqual((yield zitems(self.redis, k)), [])
 
         yield add_request(self.redis, 'foo', {
             'intervals': [50, 60],
             'request': {'foo': 23}
         })
 
-        self.assertEqual((yield self.redis.zcard(k)), 1)
-
-        self.assertEqual((yield self.get_items(k)), [
+        self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 50, {
                 'attempts': 0,
                 'intervals': [50, 60],
@@ -55,7 +46,7 @@ class TestRetries(TestCase):
             'request': {'bar': 42}
         })
 
-        self.assertEqual((yield self.get_items(k)), [
+        self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 20, {
                 'attempts': 0,
                 'intervals': [20, 90],
@@ -74,7 +65,7 @@ class TestRetries(TestCase):
         self.prefix = 'foo'
 
         k = requests_key('foo')
-        self.assertEqual((yield self.get_items(k)), [])
+        self.assertEqual((yield zitems(self.redis, k)), [])
 
         yield add_request(self.redis, 'foo', {
             'attempts': 1,
@@ -82,9 +73,7 @@ class TestRetries(TestCase):
             'request': {'foo': 23}
         })
 
-        self.assertEqual((yield self.redis.zcard(k)), 1)
-
-        self.assertEqual((yield self.get_items(k)), [
+        self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 60, {
                 'attempts': 1,
                 'intervals': [50, 60],
@@ -98,7 +87,7 @@ class TestRetries(TestCase):
             'request': {'bar': 42}
         })
 
-        self.assertEqual((yield self.get_items(k)), [
+        self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 60, {
                 'attempts': 1,
                 'intervals': [50, 60],
