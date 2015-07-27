@@ -14,7 +14,7 @@ class TestRedis(TestCase):
     @inlineCallbacks
     def tearDown(self):
         yield self.redis.delete('foo')
-        yield self.redis.transport.loseConnection()
+        self.redis.transport.loseConnection()
 
     @inlineCallbacks
     def test_add_request(self):

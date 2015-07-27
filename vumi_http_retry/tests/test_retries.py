@@ -14,7 +14,7 @@ class TestRetries(TestCase):
     @inlineCallbacks
     def tearDown(self):
         yield self.redis.delete(requests_key('foo'))
-        yield self.redis.transport.loseConnection()
+        self.redis.transport.loseConnection()
 
     @inlineCallbacks
     def test_add_request(self):
