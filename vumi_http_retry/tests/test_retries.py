@@ -1,5 +1,3 @@
-import time
-
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
@@ -11,8 +9,6 @@ class TestRetries(TestCase):
     @inlineCallbacks
     def setUp(self):
         self.prefix = None
-        self.time = None
-        self.patch(time, 'time', lambda: self.time)
         self.redis = yield create_client()
 
     @inlineCallbacks
@@ -22,19 +18,20 @@ class TestRetries(TestCase):
 
     @inlineCallbacks
     def test_add_request(self):
-        self.time = 10
         self.prefix = 'foo'
 
         k = requests_key('foo')
         self.assertEqual((yield zitems(self.redis, k)), [])
 
         yield add_request(self.redis, 'foo', {
+            'timestamp': 10,
             'intervals': [50, 60],
             'request': {'foo': 23}
         })
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 50, {
+                'timestamp': 10,
                 'attempts': 0,
                 'intervals': [50, 60],
                 'request': {'foo': 23},
@@ -42,17 +39,20 @@ class TestRetries(TestCase):
         ])
 
         yield add_request(self.redis, 'foo', {
+            'timestamp': 5,
             'intervals': [20, 90],
             'request': {'bar': 42}
         })
 
         self.assertEqual((yield zitems(self.redis, k)), [
-            (10 + 20, {
+            (5 + 20, {
+                'timestamp': 5,
                 'attempts': 0,
                 'intervals': [20, 90],
                 'request': {'bar': 42},
             }),
             (10 + 50, {
+                'timestamp': 10,
                 'attempts': 0,
                 'intervals': [50, 60],
                 'request': {'foo': 23},
@@ -61,13 +61,13 @@ class TestRetries(TestCase):
 
     @inlineCallbacks
     def test_add_request_next_retry(self):
-        self.time = 10
         self.prefix = 'foo'
 
         k = requests_key('foo')
         self.assertEqual((yield zitems(self.redis, k)), [])
 
         yield add_request(self.redis, 'foo', {
+            'timestamp': 10,
             'attempts': 1,
             'intervals': [50, 60],
             'request': {'foo': 23}
@@ -75,6 +75,7 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 60, {
+                'timestamp': 10,
                 'attempts': 1,
                 'intervals': [50, 60],
                 'request': {'foo': 23},
@@ -82,6 +83,7 @@ class TestRetries(TestCase):
         ])
 
         yield add_request(self.redis, 'foo', {
+            'timestamp': 5,
             'attempts': 2,
             'intervals': [20, 90, 100],
             'request': {'bar': 42}
@@ -89,11 +91,13 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield zitems(self.redis, k)), [
             (10 + 60, {
+                'timestamp': 10,
                 'attempts': 1,
                 'intervals': [50, 60],
                 'request': {'foo': 23},
             }),
-            (10 + 100, {
+            (5 + 100, {
+                'timestamp': 5,
                 'attempts': 2,
                 'intervals': [20, 90, 100],
                 'request': {'bar': 42},
