@@ -3,7 +3,7 @@ import json
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 
-def requests_key(prefix):
+def pending_key(prefix):
     return '.'.join((prefix, 'requests'))
 
 
@@ -16,7 +16,7 @@ def next_score(req):
     return req['timestamp'] + dt
 
 
-def add_request(redis, prefix, req):
+def add_pending(redis, prefix, req):
     req = {
         'owner_id': req['owner_id'],
         'timestamp': req['timestamp'],
@@ -25,12 +25,12 @@ def add_request(redis, prefix, req):
         'intervals': req['intervals']
     }
 
-    return redis.zadd(requests_key(prefix), next_score(req), json.dumps(req))
+    return redis.zadd(pending_key(prefix), next_score(req), json.dumps(req))
 
 
 @inlineCallbacks
-def peek_requests(redis, prefix, from_time, to_time):
-    k = requests_key(prefix)
+def peek_pending(redis, prefix, from_time, to_time):
+    k = pending_key(prefix)
 
     returnValue([
         json.loads(r)
@@ -38,9 +38,9 @@ def peek_requests(redis, prefix, from_time, to_time):
 
 
 @inlineCallbacks
-def pop_requests(redis, prefix, from_time, to_time):
-    k = requests_key(prefix)
-    requests = yield peek_requests(redis, prefix, from_time, to_time)
+def pop_pending(redis, prefix, from_time, to_time):
+    k = pending_key(prefix)
+    requests = yield peek_pending(redis, prefix, from_time, to_time)
     yield redis.zremrangebyscore(k, from_time, to_time)
     returnValue(requests)
 
