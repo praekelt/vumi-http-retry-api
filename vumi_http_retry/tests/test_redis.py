@@ -3,7 +3,7 @@ import json
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.tests.redis import create_client, zitems
+from vumi_http_retry.tests.redis import create_client, zitems, delete
 
 
 class TestRedis(TestCase):
@@ -13,22 +13,34 @@ class TestRedis(TestCase):
 
     @inlineCallbacks
     def tearDown(self):
-        yield self.redis.delete('foo')
+        yield delete(self.redis, 'test.*')
         self.redis.transport.loseConnection()
 
     @inlineCallbacks
     def test_add_request(self):
-        self.assertEqual((yield zitems(self.redis, 'foo')), [])
+        self.assertEqual((yield zitems(self.redis, 'test.foo')), [])
 
-        yield self.redis.zadd('foo', 1, json.dumps({'bar': 23}))
+        yield self.redis.zadd('test.foo', 1, json.dumps({'bar': 23}))
 
-        self.assertEqual((yield zitems(self.redis, 'foo')), [
+        self.assertEqual((yield zitems(self.redis, 'test.foo')), [
             (1, {'bar': 23}),
         ])
 
-        yield self.redis.zadd('foo', 2, json.dumps({'baz': 42}))
+        yield self.redis.zadd('test.foo', 2, json.dumps({'baz': 42}))
 
-        self.assertEqual((yield zitems(self.redis, 'foo')), [
+        self.assertEqual((yield zitems(self.redis, 'test.foo')), [
             (1, {'bar': 23}),
             (2, {'baz': 42}),
         ])
+
+    @inlineCallbacks
+    def test_delete(self):
+        self.redis.set('test.foo.bar', 'lerp')
+        self.redis.set('test.foo.baz', 'larp')
+        self.redis.set('test.quux', 'lorem')
+        yield delete(self.redis, 'test.foo.*')
+        self.assertEqual((yield self.redis.keys('test.foo.*')), [])
+        self.assertEqual((yield self.redis.get('test.quux')), 'lorem')
+
+        yield delete(self.redis, 'test.quux')
+        self.assertEqual((yield self.redis.keys('test.*')), [])
