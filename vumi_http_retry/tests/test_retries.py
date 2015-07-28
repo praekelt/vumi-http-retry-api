@@ -171,7 +171,6 @@ class TestRetries(TestCase):
     @inlineCallbacks
     def test_add_to_working_set(self):
         k = working_set_key('test')
-        self.assertEqual((yield lvalues(self.redis, k)), [])
 
         req1 = {
             'owner_id': '1234',
@@ -196,6 +195,12 @@ class TestRetries(TestCase):
             'intervals': [10],
             'request': {'baz': 21}
         }
+
+        self.assertEqual((yield lvalues(self.redis, k)), [])
+
+        yield add_to_working_set(self.redis, 'test', [])
+
+        self.assertEqual((yield lvalues(self.redis, k)), [])
 
         yield add_to_working_set(self.redis, 'test', [req1])
 
