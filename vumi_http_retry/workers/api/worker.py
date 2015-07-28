@@ -28,7 +28,7 @@ class VumiHttpRetryConfig(Config):
         default=6379)
 
 
-class VumiHttpRetryServer(object):
+class VumiHttpRetryApi(object):
     app = Klein()
 
     def __init__(self, config=None):

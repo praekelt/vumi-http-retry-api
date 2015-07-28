@@ -8,12 +8,12 @@ from twisted.web.server import Site
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.app import VumiHttpRetryServer
+from vumi_http_retry.workers.api.worker import VumiHttpRetryApi
 from vumi_http_retry.retries import requests_key
 from vumi_http_retry.tests.redis import zitems, delete
 
 
-class TestVumiHttpRetryServer(TestCase):
+class TestVumiHttpRetryApi(TestCase):
     @inlineCallbacks
     def setUp(self):
         self.time = 10
@@ -28,7 +28,7 @@ class TestVumiHttpRetryServer(TestCase):
 
     @inlineCallbacks
     def start_server(self):
-        self.app = VumiHttpRetryServer({'redis_prefix': 'test'})
+        self.app = VumiHttpRetryApi({'redis_prefix': 'test'})
         yield self.app.setup()
         self.server = yield reactor.listenTCP(0, Site(self.app.app.resource()))
         addr = self.server.getHost()

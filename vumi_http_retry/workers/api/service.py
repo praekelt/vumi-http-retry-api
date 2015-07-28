@@ -4,7 +4,7 @@ from twisted.web import server
 from twisted.python import usage
 from twisted.application import service, strports
 
-from vumi_http_retry.app import VumiHttpRetryServer
+from vumi_http_retry.workers.api.worker import VumiHttpRetryApi
 
 
 class Options(usage.Options):
@@ -20,10 +20,10 @@ def makeService(options):
     if options['config'] is not None:
         config = yaml.safe_load(open(options['config']))
 
-    srv = VumiHttpRetryServer(config)
-    site = server.Site(srv.app.resource())
-    srv_service = service.MultiService()
-    strports_service = strports.service(str(srv.config.port), site)
-    strports_service.setServiceParent(srv_service)
+    api = VumiHttpRetryApi(config)
+    site = server.Site(api.app.resource())
+    api_service = service.MultiService()
+    strports_service = strports.service(str(api.config.port), site)
+    strports_service.setServiceParent(api_service)
 
-    return srv_service
+    return api_service
