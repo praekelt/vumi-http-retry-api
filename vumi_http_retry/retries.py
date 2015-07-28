@@ -7,7 +7,7 @@ def pending_key(prefix):
     return '.'.join((prefix, 'requests'))
 
 
-def working_set_key(prefix):
+def ready_key(prefix):
     return '.'.join((prefix, 'working_set'))
 
 
@@ -46,14 +46,14 @@ def pop_pending(redis, prefix, from_time, to_time):
 
 
 @inlineCallbacks
-def add_to_working_set(redis, prefix, reqs):
+def add_ready(redis, prefix, reqs):
     reqs = [json.dumps(req) for req in reqs]
 
     if reqs:
-        yield redis.rpush(working_set_key(prefix), *reqs)
+        yield redis.rpush(ready_key(prefix), *reqs)
 
 
 @inlineCallbacks
-def pop_from_working_set(redis, prefix):
-    result = yield redis.lpop(working_set_key(prefix))
+def pop_ready(redis, prefix):
+    result = yield redis.lpop(ready_key(prefix))
     returnValue(json.loads(result) if result is not None else result)

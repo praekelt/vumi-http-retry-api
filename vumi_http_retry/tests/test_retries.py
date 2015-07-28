@@ -2,8 +2,8 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
-    pending_key, working_set_key, add_pending, peek_pending, pop_pending,
-    add_to_working_set, pop_from_working_set)
+    pending_key, ready_key, add_pending, peek_pending, pop_pending,
+    add_ready, pop_ready)
 
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
@@ -169,8 +169,8 @@ class TestRetries(TestCase):
             original_items[2:3] + original_items[5:])
 
     @inlineCallbacks
-    def test_add_to_working_set(self):
-        k = working_set_key('test')
+    def test_add_ready(self):
+        k = ready_key('test')
 
         req1 = {
             'owner_id': '1234',
@@ -198,21 +198,21 @@ class TestRetries(TestCase):
 
         self.assertEqual((yield lvalues(self.redis, k)), [])
 
-        yield add_to_working_set(self.redis, 'test', [])
+        yield add_ready(self.redis, 'test', [])
 
         self.assertEqual((yield lvalues(self.redis, k)), [])
 
-        yield add_to_working_set(self.redis, 'test', [req1])
+        yield add_ready(self.redis, 'test', [req1])
 
         self.assertEqual((yield lvalues(self.redis, k)), [req1])
 
-        yield add_to_working_set(self.redis, 'test', [req2, req3])
+        yield add_ready(self.redis, 'test', [req2, req3])
 
         self.assertEqual((yield lvalues(self.redis, k)), [req1, req2, req3])
 
     @inlineCallbacks
-    def test_pop_from_working_set(self):
-        k = working_set_key('test')
+    def test_pop_ready(self):
+        k = ready_key('test')
 
         req1 = {
             'owner_id': '1234',
@@ -230,17 +230,17 @@ class TestRetries(TestCase):
             'request': {'bar': 42}
         }
 
-        yield add_to_working_set(self.redis, 'test', [req1, req2])
+        yield add_ready(self.redis, 'test', [req1, req2])
         self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
 
-        result = yield pop_from_working_set(self.redis, 'test')
+        result = yield pop_ready(self.redis, 'test')
         self.assertEqual(result, req1)
         self.assertEqual((yield lvalues(self.redis, k)), [req2])
 
-        result = yield pop_from_working_set(self.redis, 'test')
+        result = yield pop_ready(self.redis, 'test')
         self.assertEqual(result, req2)
         self.assertEqual((yield lvalues(self.redis, k)), [])
 
-        result = yield pop_from_working_set(self.redis, 'test')
+        result = yield pop_ready(self.redis, 'test')
         self.assertEqual(result, None)
         self.assertEqual((yield lvalues(self.redis, k)), [])
