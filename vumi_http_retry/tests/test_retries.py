@@ -1,7 +1,8 @@
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.retries import requests_key, add_request, peek_requests
+from vumi_http_retry.retries import (
+    requests_key, add_request, peek_requests, pop_requests)
 from vumi_http_retry.tests.redis import create_client, zitems, delete
 
 
@@ -125,15 +126,42 @@ class TestRetries(TestCase):
         original_items = yield zitems(self.redis, k)
         original_values = [v for t, v in original_items]
 
-        result = yield peek_requests(self.redis, 'test', 0, 17)
+        result = yield peek_requests(self.redis, 'test', 0, 10 + 7)
         self.assertEqual(result, original_values[:1])
         self.assertEqual((yield zitems(self.redis, k)), original_items)
 
-        result = yield peek_requests(self.redis, 'test', 0, 23)
+        result = yield peek_requests(self.redis, 'test', 0, 10 + 13)
         self.assertEqual(result, original_values[:2])
         self.assertEqual((yield zitems(self.redis, k)), original_items)
 
-        result = yield peek_requests(self.redis, 'test', 22, 27)
+        result = yield peek_requests(self.redis, 'test', 22, 10 + 17)
 
         self.assertEqual(result, original_values[2:])
         self.assertEqual((yield zitems(self.redis, k)), original_items)
+
+    @inlineCallbacks
+    def test_pop_requests(self):
+        k = requests_key('test')
+
+        for t in range(5, 35, 5):
+            yield add_request(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        original_items = yield zitems(self.redis, k)
+        original_values = [v for t, v in original_items]
+
+        result = yield pop_requests(self.redis, 'test', 0, 10 + 13)
+        self.assertEqual(result, original_values[:2])
+        self.assertEqual((yield zitems(self.redis, k)), original_items[2:])
+
+        result = yield pop_requests(self.redis, 'test', 10 + 18, 10 + 27)
+        self.assertEqual(result, original_values[3:5])
+
+        self.assertEqual(
+            (yield zitems(self.redis, k)),
+            original_items[2:3] + original_items[5:])

@@ -33,5 +33,9 @@ def peek_requests(redis, prefix, from_time, to_time):
         for r in (yield redis.zrangebyscore(k, from_time, to_time))])
 
 
+@inlineCallbacks
 def pop_requests(redis, prefix, from_time, to_time):
-    pass
+    k = requests_key(prefix)
+    requests = yield peek_requests(redis, prefix, from_time, to_time)
+    yield redis.zremrangebyscore(k, from_time, to_time)
+    returnValue(requests)
