@@ -70,7 +70,7 @@ class TestVumiHttpRetryServer(TestCase):
         self.assertEqual((yield resp.content()), json.dumps({}))
 
         self.assertEqual((yield zitems(self.app.redis, k)), [
-            (10 + 30, {
+            (self.time + 30, {
                 'attempts': 0,
                 'timestamp': 10,
                 'owner_id': '1234',
