@@ -45,8 +45,9 @@ def pop_requests(redis, prefix, from_time, to_time):
     returnValue(requests)
 
 
-def add_to_working_set(redis, prefix, req):
-    return redis.rpush(working_set_key(prefix), json.dumps(req))
+def add_to_working_set(redis, prefix, reqs):
+    reqs = [json.dumps(req) for req in reqs]
+    return redis.rpush(working_set_key(prefix), *reqs)
 
 
 @inlineCallbacks

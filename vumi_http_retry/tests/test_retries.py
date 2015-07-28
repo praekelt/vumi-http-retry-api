@@ -189,13 +189,21 @@ class TestRetries(TestCase):
             'request': {'bar': 42}
         }
 
-        yield add_to_working_set(self.redis, 'test', req1)
+        req3 = {
+            'owner_id': '1234',
+            'timestamp': 15,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'baz': 21}
+        }
+
+        yield add_to_working_set(self.redis, 'test', [req1])
 
         self.assertEqual((yield lvalues(self.redis, k)), [req1])
 
-        yield add_to_working_set(self.redis, 'test', req2)
+        yield add_to_working_set(self.redis, 'test', [req2, req3])
 
-        self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
+        self.assertEqual((yield lvalues(self.redis, k)), [req1, req2, req3])
 
     @inlineCallbacks
     def test_pop_from_working_set(self):
@@ -217,8 +225,7 @@ class TestRetries(TestCase):
             'request': {'bar': 42}
         }
 
-        yield add_to_working_set(self.redis, 'test', req1)
-        yield add_to_working_set(self.redis, 'test', req2)
+        yield add_to_working_set(self.redis, 'test', [req1, req2])
         self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
 
         result = yield pop_from_working_set(self.redis, 'test')
