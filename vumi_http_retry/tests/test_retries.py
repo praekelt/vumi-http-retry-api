@@ -2,28 +2,25 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import requests_key, add_request
-from vumi_http_retry.tests.redis import create_client, zitems
+from vumi_http_retry.tests.redis import create_client, zitems, delete
 
 
 class TestRetries(TestCase):
     @inlineCallbacks
     def setUp(self):
-        self.prefix = None
         self.redis = yield create_client()
 
     @inlineCallbacks
     def tearDown(self):
-        yield self.redis.delete(requests_key('foo'))
+        yield delete(self.redis, "test.*")
         self.redis.transport.loseConnection()
 
     @inlineCallbacks
     def test_add_request(self):
-        self.prefix = 'foo'
-
-        k = requests_key('foo')
+        k = requests_key('test')
         self.assertEqual((yield zitems(self.redis, k)), [])
 
-        yield add_request(self.redis, 'foo', {
+        yield add_request(self.redis, 'test', {
             'owner_id': '1234',
             'timestamp': 10,
             'intervals': [50, 60],
@@ -40,7 +37,7 @@ class TestRetries(TestCase):
             }),
         ])
 
-        yield add_request(self.redis, 'foo', {
+        yield add_request(self.redis, 'test', {
             'owner_id': '1234',
             'timestamp': 5,
             'intervals': [20, 90],
@@ -66,12 +63,10 @@ class TestRetries(TestCase):
 
     @inlineCallbacks
     def test_add_request_next_retry(self):
-        self.prefix = 'foo'
-
-        k = requests_key('foo')
+        k = requests_key('test')
         self.assertEqual((yield zitems(self.redis, k)), [])
 
-        yield add_request(self.redis, 'foo', {
+        yield add_request(self.redis, 'test', {
             'owner_id': '1234',
             'timestamp': 10,
             'attempts': 1,
@@ -89,7 +84,7 @@ class TestRetries(TestCase):
             }),
         ])
 
-        yield add_request(self.redis, 'foo', {
+        yield add_request(self.redis, 'test', {
             'owner_id': '1234',
             'timestamp': 5,
             'attempts': 2,
