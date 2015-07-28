@@ -11,6 +11,7 @@ from confmodel.fields import ConfigText, ConfigInt
 from txredis.client import RedisClient
 
 from vumi_http_retry.retries import add_request
+from vumi_http_retry.worker import BaseWorker
 
 
 class VumiHttpRetryConfig(Config):
@@ -28,14 +29,9 @@ class VumiHttpRetryConfig(Config):
         default=6379)
 
 
-class VumiHttpRetryApi(object):
+class VumiHttpRetryApi(BaseWorker):
+    CONFIG_CLS = VumiHttpRetryConfig
     app = Klein()
-
-    def __init__(self, config=None):
-        if config is None:
-            config = {}
-
-        self.config = VumiHttpRetryConfig(config)
 
     @inlineCallbacks
     def setup(self):

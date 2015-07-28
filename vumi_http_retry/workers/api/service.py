@@ -1,29 +1,23 @@
-import yaml
+from twisted.web.server import Site
+from twisted.application import strports
 
-from twisted.web import server
-from twisted.python import usage
-from twisted.application import service, strports
-
+from vumi_http_retry.service import BaseOptions, BaseService
 from vumi_http_retry.workers.api.worker import VumiHttpRetryApi
 
 
-class Options(usage.Options):
-    optParameters = [[
-        'config', 'c', None,
-        'Path to the config file to read from'
-    ]]
+class Options(BaseOptions):
+    pass
+
+
+class Service(BaseService):
+    WORKER_CLS = VumiHttpRetryApi
 
 
 def makeService(options):
-    config = {}
+    service = Service.from_options(options)
+    site = Site(service.worker.app.resource())
 
-    if options['config'] is not None:
-        config = yaml.safe_load(open(options['config']))
+    strports_service = strports.service(str(service.worker.config.port), site)
+    strports_service.setServiceParent(service)
 
-    api = VumiHttpRetryApi(config)
-    site = server.Site(api.app.resource())
-    api_service = service.MultiService()
-    strports_service = strports.service(str(api.config.port), site)
-    strports_service.setServiceParent(api_service)
-
-    return api_service
+    return service
