@@ -14,8 +14,6 @@ from vumi_http_retry.tests.redis import zitems, delete
 
 
 class TestVumiHttpRetryServer(TestCase):
-    timeout = 1
-
     @inlineCallbacks
     def setUp(self):
         self.time = 10
