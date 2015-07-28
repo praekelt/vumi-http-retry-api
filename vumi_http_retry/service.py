@@ -1,29 +1,43 @@
 import yaml
 
-from twisted.web import server
 from twisted.python import usage
-from twisted.application import service, strports
+from twisted.application.service import MultiService
+from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.app import VumiHttpRetryServer
 
-
-class Options(usage.Options):
+class BaseOptions(usage.Options):
     optParameters = [[
         'config', 'c', None,
         'Path to the config file to read from'
     ]]
 
 
-def makeService(options):
-    config = {}
+class BaseService(MultiService, object):
+    WORKER_CLS = None
 
-    if options['config'] is not None:
-        config = yaml.safe_load(open(options['config']))
+    def __init__(self, config):
+        super(BaseService, self).__init__()
+        self.worker = self.WORKER_CLS(config)
 
-    srv = VumiHttpRetryServer(config)
-    site = server.Site(srv.app.resource())
-    srv_service = service.MultiService()
-    strports_service = strports.service(str(srv.config.port), site)
-    strports_service.setServiceParent(srv_service)
+    @classmethod
+    def load_config(cls, filename):
+        return yaml.safe_load(open(filename))
 
-    return srv_service
+    @classmethod
+    def from_options(cls, options):
+        config = {}
+
+        if options['config'] is not None:
+            config = cls.load_config(options['config'])
+
+        return cls(config)
+
+    @inlineCallbacks
+    def startService(self):
+        yield super(BaseService, self).startService()
+        yield self.worker.setup()
+
+    @inlineCallbacks
+    def stopService(self):
+        yield self.worker.teardown()
+        yield super(BaseService, self).stopService()
