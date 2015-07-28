@@ -16,6 +16,7 @@ setup(
         'treq',
         'confmodel',
         'PyYAML',
+        'txredis',
    ],
     classifiers=[
         'Development Status :: 4 - Beta',
