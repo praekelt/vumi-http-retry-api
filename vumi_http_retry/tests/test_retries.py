@@ -1,7 +1,7 @@
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.retries import requests_key, add_request
+from vumi_http_retry.retries import requests_key, add_request, peek_requests
 from vumi_http_retry.tests.redis import create_client, zitems, delete
 
 
@@ -108,3 +108,32 @@ class TestRetries(TestCase):
                 'request': {'bar': 42},
             }),
         ])
+
+    @inlineCallbacks
+    def test_peek_requests(self):
+        k = requests_key('test')
+
+        for t in range(5, 20, 5):
+            yield add_request(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        original_items = yield zitems(self.redis, k)
+        original_values = [v for t, v in original_items]
+
+        result = yield peek_requests(self.redis, 'test', 0, 17)
+        self.assertEqual(result, original_values[:1])
+        self.assertEqual((yield zitems(self.redis, k)), original_items)
+
+        result = yield peek_requests(self.redis, 'test', 0, 23)
+        self.assertEqual(result, original_values[:2])
+        self.assertEqual((yield zitems(self.redis, k)), original_items)
+
+        result = yield peek_requests(self.redis, 'test', 22, 27)
+
+        self.assertEqual(result, original_values[2:])
+        self.assertEqual((yield zitems(self.redis, k)), original_items)
