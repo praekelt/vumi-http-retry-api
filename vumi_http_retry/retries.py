@@ -7,6 +7,10 @@ def requests_key(prefix):
     return '.'.join((prefix, 'requests'))
 
 
+def working_set_key(prefix):
+    return '.'.join((prefix, 'working_set'))
+
+
 def next_score(req):
     dt = req['intervals'][req['attempts']]
     return req['timestamp'] + dt
@@ -39,3 +43,7 @@ def pop_requests(redis, prefix, from_time, to_time):
     requests = yield peek_requests(redis, prefix, from_time, to_time)
     yield redis.zremrangebyscore(k, from_time, to_time)
     returnValue(requests)
+
+
+def add_to_working_set(redis, prefix, req):
+    return redis.rpush(working_set_key(prefix), json.dumps(req))
