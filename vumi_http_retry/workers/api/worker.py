@@ -14,7 +14,7 @@ from vumi_http_retry.retries import add_request
 from vumi_http_retry.worker import BaseWorker
 
 
-class VumiHttpRetryConfig(Config):
+class RetryApiConfig(Config):
     port = ConfigInt(
         "Port to listen on",
         default=8080)
@@ -29,8 +29,8 @@ class VumiHttpRetryConfig(Config):
         default=6379)
 
 
-class VumiHttpRetryApi(BaseWorker):
-    CONFIG_CLS = VumiHttpRetryConfig
+class RetryApiWorker(BaseWorker):
+    CONFIG_CLS = RetryApiConfig
     app = Klein()
 
     @inlineCallbacks
