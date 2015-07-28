@@ -2,7 +2,7 @@ import json
 
 
 def requests_key(prefix):
-    return ':'.join((prefix, 'requests'))
+    return '.'.join((prefix, 'requests'))
 
 
 def next_score(req):
