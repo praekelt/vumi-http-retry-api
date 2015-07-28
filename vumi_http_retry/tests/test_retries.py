@@ -3,7 +3,7 @@ from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
     requests_key, working_set_key, add_request, peek_requests, pop_requests,
-    add_to_working_set)
+    add_to_working_set, pop_from_working_set)
 
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
@@ -196,3 +196,39 @@ class TestRetries(TestCase):
         yield add_to_working_set(self.redis, 'test', req2)
 
         self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
+
+    @inlineCallbacks
+    def test_pop_from_working_set(self):
+        k = working_set_key('test')
+
+        req1 = {
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': 23}
+        }
+
+        req2 = {
+            'owner_id': '1234',
+            'timestamp': 10,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'bar': 42}
+        }
+
+        yield add_to_working_set(self.redis, 'test', req1)
+        yield add_to_working_set(self.redis, 'test', req2)
+        self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
+
+        result = yield pop_from_working_set(self.redis, 'test')
+        self.assertEqual(result, req1)
+        self.assertEqual((yield lvalues(self.redis, k)), [req2])
+
+        result = yield pop_from_working_set(self.redis, 'test')
+        self.assertEqual(result, req2)
+        self.assertEqual((yield lvalues(self.redis, k)), [])
+
+        result = yield pop_from_working_set(self.redis, 'test')
+        self.assertEqual(result, None)
+        self.assertEqual((yield lvalues(self.redis, k)), [])

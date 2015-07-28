@@ -47,3 +47,9 @@ def pop_requests(redis, prefix, from_time, to_time):
 
 def add_to_working_set(redis, prefix, req):
     return redis.rpush(working_set_key(prefix), json.dumps(req))
+
+
+@inlineCallbacks
+def pop_from_working_set(redis, prefix):
+    result = yield redis.lpop(working_set_key(prefix))
+    returnValue(json.loads(result) if result is not None else result)
