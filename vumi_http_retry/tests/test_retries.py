@@ -125,21 +125,21 @@ class TestRetries(TestCase):
                 'request': {'foo': t}
             })
 
-        original_items = yield zitems(self.redis, k)
-        original_values = [v for t, v in original_items]
+        pending = yield zitems(self.redis, k)
+        pending_reqs = [r for t, r in pending]
 
         result = yield peek_pending(self.redis, 'test', 0, 10 + 7)
-        self.assertEqual(result, original_values[:1])
-        self.assertEqual((yield zitems(self.redis, k)), original_items)
+        self.assertEqual(result, pending_reqs[:1])
+        self.assertEqual((yield zitems(self.redis, k)), pending)
 
         result = yield peek_pending(self.redis, 'test', 0, 10 + 13)
-        self.assertEqual(result, original_values[:2])
-        self.assertEqual((yield zitems(self.redis, k)), original_items)
+        self.assertEqual(result, pending_reqs[:2])
+        self.assertEqual((yield zitems(self.redis, k)), pending)
 
         result = yield peek_pending(self.redis, 'test', 22, 10 + 17)
 
-        self.assertEqual(result, original_values[2:])
-        self.assertEqual((yield zitems(self.redis, k)), original_items)
+        self.assertEqual(result, pending_reqs[2:])
+        self.assertEqual((yield zitems(self.redis, k)), pending)
 
     @inlineCallbacks
     def test_pop_pending(self):
@@ -154,19 +154,19 @@ class TestRetries(TestCase):
                 'request': {'foo': t}
             })
 
-        original_items = yield zitems(self.redis, k)
-        original_values = [v for t, v in original_items]
+        pending = yield zitems(self.redis, k)
+        pending_reqs = [r for t, r in pending]
 
         result = yield pop_pending(self.redis, 'test', 0, 10 + 13)
-        self.assertEqual(result, original_values[:2])
-        self.assertEqual((yield zitems(self.redis, k)), original_items[2:])
+        self.assertEqual(result, pending_reqs[:2])
+        self.assertEqual((yield zitems(self.redis, k)), pending[2:])
 
         result = yield pop_pending(self.redis, 'test', 10 + 18, 10 + 27)
-        self.assertEqual(result, original_values[3:5])
+        self.assertEqual(result, pending_reqs[3:5])
 
         self.assertEqual(
             (yield zitems(self.redis, k)),
-            original_items[2:3] + original_items[5:])
+            pending[2:3] + pending[5:])
 
     @inlineCallbacks
     def test_add_ready(self):
