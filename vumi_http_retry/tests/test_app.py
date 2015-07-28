@@ -10,7 +10,7 @@ from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.app import VumiHttpRetryServer
 from vumi_http_retry.retries import requests_key
-from vumi_http_retry.tests.redis import zitems
+from vumi_http_retry.tests.redis import zitems, delete
 
 
 class TestVumiHttpRetryServer(TestCase):
@@ -18,20 +18,19 @@ class TestVumiHttpRetryServer(TestCase):
 
     @inlineCallbacks
     def setUp(self):
-        self.prefix = 'foo'
         self.time = 10
         yield self.start_server()
         self.patch(time, 'time', lambda: self.time)
 
     @inlineCallbacks
     def tearDown(self):
-        yield self.app.redis.delete(requests_key(self.prefix))
+        yield delete(self.app.redis, 'test.*')
         yield self.app.teardown()
         yield self.stop_server()
 
     @inlineCallbacks
     def start_server(self):
-        self.app = VumiHttpRetryServer({'redis_prefix': self.prefix})
+        self.app = VumiHttpRetryServer({'redis_prefix': 'test'})
         yield self.app.setup()
         self.server = yield reactor.listenTCP(0, Site(self.app.app.resource()))
         addr = self.server.getHost()
@@ -59,7 +58,7 @@ class TestVumiHttpRetryServer(TestCase):
 
     @inlineCallbacks
     def test_requests(self):
-        k = requests_key(self.prefix)
+        k = requests_key('test')
 
         resp = yield self.post('/requests/', {
             'intervals': [30, 90],
