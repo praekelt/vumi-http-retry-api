@@ -3,7 +3,7 @@ import json
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.tests.redis import create_client, zitems, delete
+from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
 
 class TestRedis(TestCase):
@@ -17,7 +17,7 @@ class TestRedis(TestCase):
         self.redis.transport.loseConnection()
 
     @inlineCallbacks
-    def test_add_request(self):
+    def test_zitems(self):
         self.assertEqual((yield zitems(self.redis, 'test.foo')), [])
 
         yield self.redis.zadd('test.foo', 1, json.dumps({'bar': 23}))
@@ -32,6 +32,24 @@ class TestRedis(TestCase):
             (1, {'bar': 23}),
             (2, {'baz': 42}),
         ])
+
+    @inlineCallbacks
+    def test_lvalues(self):
+        self.assertEqual(
+            (yield lvalues(self.redis, 'test.foo')),
+            [])
+
+        yield self.redis.rpush('test.foo', json.dumps({'bar': 23}))
+
+        self.assertEqual(
+            (yield lvalues(self.redis, 'test.foo')),
+            [{'bar': 23}])
+
+        yield self.redis.rpush('test.foo', json.dumps({'baz': 42}))
+
+        self.assertEqual(
+            (yield lvalues(self.redis, 'test.foo')),
+            [{'bar': 23}, {'baz': 42}])
 
     @inlineCallbacks
     def test_delete(self):
