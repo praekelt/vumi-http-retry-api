@@ -70,3 +70,7 @@ def retry(req, **overrides):
 
 def should_retry(resp):
     return 500 <= resp.code < 600
+
+
+def can_reattempt(req):
+    return req['attempts'] < len(req['intervals'])

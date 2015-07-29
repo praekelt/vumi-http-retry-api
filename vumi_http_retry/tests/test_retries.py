@@ -5,7 +5,7 @@ from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
     pending_key, ready_key, add_pending, pop_pending,
-    add_ready, pop_ready, retry, should_retry)
+    add_ready, pop_ready, retry, should_retry, can_reattempt)
 from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
@@ -350,3 +350,26 @@ class TestRetries(TestCase):
         self.assertTrue(should_retry((yield send(500))))
         self.assertTrue(should_retry((yield send(504))))
         self.assertTrue(should_retry((yield send(599))))
+
+    def test_can_reattempt(self):
+        req = {
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10, 20, 30],
+            'request': {
+                'url': "/foo",
+                'method': 'GET'
+            }
+        }
+
+        self.assertTrue(can_reattempt(req))
+
+        req['attempts'] = 1
+        self.assertTrue(can_reattempt(req))
+
+        req['attempts'] = 2
+        self.assertTrue(can_reattempt(req))
+
+        req['attempts'] = 3
+        self.assertFalse(can_reattempt(req))
