@@ -1,3 +1,4 @@
+from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks, returnValue
 
@@ -8,7 +9,15 @@ from vumi_http_retry.tests.utils import ToyServer
 
 
 class ToyRetrySenderWorker(RetrySenderWorker):
-    pass
+    @inlineCallbacks
+    def setup(self, *a, **kw):
+        self.retries = []
+        yield super(ToyRetrySenderWorker, self).setup(*a, **kw)
+
+    def next_retry(self):
+        d = super(ToyRetrySenderWorker, self).next_retry()
+        self.retries.append(d)
+        return d
 
 
 class TestRetrySenderWorker(TestCase):
@@ -26,7 +35,7 @@ class TestRetrySenderWorker(TestCase):
         config.setdefault('overrides', {}).update({'persistent': False})
 
         worker = ToyRetrySenderWorker(config)
-        yield worker.setup()
+        yield worker.setup(Clock())
         self.addCleanup(self.teardown_worker, worker)
 
         returnValue(worker)
@@ -189,3 +198,50 @@ class TestRetrySenderWorker(TestCase):
         yield worker.next_retry()
         self.assertEqual(retries, reqs)
         self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+    @inlineCallbacks
+    def test_retry_loop(self):
+        k = ready_key('test')
+        worker = yield self.mk_worker({'frequency': 5})
+        retries = self.patch_retry(worker)
+
+        reqs = [{
+            'owner_id': '1234',
+            'timestamp': t,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': t}
+        } for t in range(5, 25, 5)]
+
+        yield add_ready(worker.redis, 'test', reqs)
+
+        worker.retries.pop()
+
+        worker.clock.advance(5)
+        yield worker.retries.pop()
+        self.assertEqual(retries, reqs[:1])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
+
+        worker.clock.advance(5)
+        yield worker.retries.pop()
+        self.assertEqual(retries, reqs[:2])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[2:])
+
+        worker.clock.advance(5)
+        yield worker.retries.pop()
+        self.assertEqual(retries, reqs[:3])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[3:])
+
+        worker.clock.advance(5)
+        yield worker.retries.pop()
+        self.assertEqual(retries, reqs)
+        self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+        worker.clock.advance(5)
+        yield worker.retries.pop()
+        self.assertEqual(retries, reqs)
+        self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+        worker.stop_retry_loop()
+        worker.clock.advance(5)
+        self.assertEqual(worker.retries, [])

@@ -1,5 +1,6 @@
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
+from twisted.internet.task import LoopingCall
 from twisted.internet.defer import inlineCallbacks
 
 from txredis.client import RedisClient
@@ -33,22 +34,26 @@ class RetrySenderWorker(BaseWorker):
     CONFIG_CLS = RetrySenderConfig
 
     @inlineCallbacks
-    def setup(self):
+    def setup(self, clock=None):
+        if clock is None:
+            clock = reactor
+
+        self.clock = clock
+
         redisCreator = ClientCreator(reactor, RedisClient)
 
         self.redis = yield redisCreator.connectTCP(
             self.config.redis_host,
             self.config.redis_port)
 
+        self.retry_loop = LoopingCall(self.next_retry)
+        self.retry_loop.clock = self.clock
+
+        self.start_retry_loop()
+
     def teardown(self):
         self.redis.transport.loseConnection()
-
-    @inlineCallbacks
-    def retry(self, req):
-        resp = yield retry(req, **self.config.overrides)
-
-        if should_retry(resp) and can_reattempt(req):
-            yield add_pending(self.redis, self.config.redis_prefix, req)
+        self.stop_retry_loop()
 
     @inlineCallbacks
     def next_retry(self):
@@ -57,3 +62,17 @@ class RetrySenderWorker(BaseWorker):
 
         if req:
             yield self.retry(req)
+
+    @inlineCallbacks
+    def retry(self, req):
+        resp = yield retry(req, **self.config.overrides)
+
+        if should_retry(resp) and can_reattempt(req):
+            yield add_pending(self.redis, self.config.redis_prefix, req)
+
+    def start_retry_loop(self):
+        self.retry_loop.start(self.config.frequency, now=True)
+
+    def stop_retry_loop(self):
+        if self.retry_loop.running:
+            self.retry_loop.stop()
