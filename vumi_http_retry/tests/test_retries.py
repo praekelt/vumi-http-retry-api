@@ -1,8 +1,11 @@
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.retries import requests_key, add_request
-from vumi_http_retry.tests.redis import create_client, zitems, delete
+from vumi_http_retry.retries import (
+    requests_key, working_set_key, add_request, pop_requests,
+    add_to_working_set, pop_from_working_set)
+
+from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
 
 class TestRetries(TestCase):
@@ -108,3 +111,111 @@ class TestRetries(TestCase):
                 'request': {'bar': 42},
             }),
         ])
+
+    @inlineCallbacks
+    def test_pop_requests(self):
+        k = requests_key('test')
+
+        for t in range(5, 35, 5):
+            yield add_request(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        original_items = yield zitems(self.redis, k)
+        original_values = [v for t, v in original_items]
+
+        result = yield pop_requests(self.redis, 'test', 0, 10 + 13)
+        self.assertEqual(result, original_values[:2])
+        self.assertEqual((yield zitems(self.redis, k)), original_items[2:])
+
+        result = yield pop_requests(self.redis, 'test', 10 + 18, 10 + 27)
+        self.assertEqual(result, original_values[3:5])
+
+        self.assertEqual(
+            (yield zitems(self.redis, k)),
+            original_items[2:3] + original_items[5:])
+
+        result = yield pop_requests(self.redis, 'test', 0, 50)
+        self.assertEqual(result, original_values[2:3] + original_values[5:])
+        self.assertEqual((yield zitems(self.redis, k)), [])
+
+    @inlineCallbacks
+    def test_add_to_working_set(self):
+        k = working_set_key('test')
+
+        req1 = {
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': 23}
+        }
+
+        req2 = {
+            'owner_id': '1234',
+            'timestamp': 10,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'bar': 42}
+        }
+
+        req3 = {
+            'owner_id': '1234',
+            'timestamp': 15,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'baz': 21}
+        }
+
+        self.assertEqual((yield lvalues(self.redis, k)), [])
+
+        yield add_to_working_set(self.redis, 'test', [])
+
+        self.assertEqual((yield lvalues(self.redis, k)), [])
+
+        yield add_to_working_set(self.redis, 'test', [req1])
+
+        self.assertEqual((yield lvalues(self.redis, k)), [req1])
+
+        yield add_to_working_set(self.redis, 'test', [req2, req3])
+
+        self.assertEqual((yield lvalues(self.redis, k)), [req1, req2, req3])
+
+    @inlineCallbacks
+    def test_pop_from_working_set(self):
+        k = working_set_key('test')
+
+        req1 = {
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': 23}
+        }
+
+        req2 = {
+            'owner_id': '1234',
+            'timestamp': 10,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'bar': 42}
+        }
+
+        yield add_to_working_set(self.redis, 'test', [req1, req2])
+        self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
+
+        result = yield pop_from_working_set(self.redis, 'test')
+        self.assertEqual(result, req1)
+        self.assertEqual((yield lvalues(self.redis, k)), [req2])
+
+        result = yield pop_from_working_set(self.redis, 'test')
+        self.assertEqual(result, req2)
+        self.assertEqual((yield lvalues(self.redis, k)), [])
+
+        result = yield pop_from_working_set(self.redis, 'test')
+        self.assertEqual(result, None)
+        self.assertEqual((yield lvalues(self.redis, k)), [])
