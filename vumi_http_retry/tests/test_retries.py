@@ -3,8 +3,8 @@ from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
     pending_key, ready_key, add_pending, pop_pending,
-    add_ready, pop_ready)
-
+    add_ready, pop_ready, retry)
+from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
 
@@ -219,3 +219,113 @@ class TestRetries(TestCase):
         result = yield pop_ready(self.redis, 'test')
         self.assertEqual(result, None)
         self.assertEqual((yield lvalues(self.redis, k)), [])
+
+    @inlineCallbacks
+    def test_retry(self):
+        srv = yield ToyServer.from_test(self)
+        reqs = []
+
+        @srv.app.route('/foo')
+        def route(req):
+            reqs.append(req)
+            return 'ok'
+
+        resp = yield retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {
+                'url': "%s/foo" % (srv.url,),
+                'method': 'POST'
+            }
+        }, persistent=False)
+
+        self.assertEqual(resp.code, 200)
+        self.assertEqual((yield resp.content()), 'ok')
+
+        [req] = reqs
+        self.assertEqual(req.method, 'POST')
+
+    @inlineCallbacks
+    def test_retry_data(self):
+        srv = yield ToyServer.from_test(self)
+        contents = []
+
+        @srv.app.route('/foo')
+        def route(req):
+            contents.append(req.content.read())
+
+        yield retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {
+                'url': "%s/foo" % (srv.url,),
+                'method': 'POST',
+                'data': 'hi'
+            }
+        }, persistent=False)
+
+        self.assertEqual(contents, ['hi'])
+
+    @inlineCallbacks
+    def test_retry_headers(self):
+        srv = yield ToyServer.from_test(self)
+        headers = []
+
+        @srv.app.route('/foo')
+        def route(req):
+            headers.append({
+                'X-Foo': req.requestHeaders.getRawHeaders('X-Foo'),
+                'X-Bar': req.requestHeaders.getRawHeaders('X-Bar')
+            })
+
+        yield retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {
+                'url': "%s/foo" % (srv.url,),
+                'method': 'POST',
+                'headers': {
+                    'X-Foo': ['a', 'b'],
+                    'X-Bar': ['c', 'd'],
+                }
+            }
+        }, persistent=False)
+
+        self.assertEqual(headers, [{
+            'X-Foo': ['a', 'b'],
+            'X-Bar': ['c', 'd'],
+        }])
+
+    @inlineCallbacks
+    def test_retry_inc_attempts(self):
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/foo')
+        def route(_):
+            pass
+
+        req = {
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10, 20, 30],
+            'request': {
+                'url': "%s/foo" % (srv.url,),
+                'method': 'GET'
+            }
+        }
+
+        yield retry(req, persistent=False)
+        self.assertEqual(req['attempts'], 1)
+
+        yield retry(req, persistent=False)
+        self.assertEqual(req['attempts'], 2)
+
+        yield retry(req, persistent=False)
+        self.assertEqual(req['attempts'], 3)
