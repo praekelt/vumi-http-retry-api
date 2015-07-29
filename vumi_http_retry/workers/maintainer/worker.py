@@ -1,5 +1,6 @@
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
+from twisted.internet.task import LoopingCall
 from twisted.internet.defer import inlineCallbacks
 
 from txredis.client import RedisClient
@@ -41,6 +42,9 @@ class RetryMaintainerWorker(BaseWorker):
             self.config.redis_host,
             self.config.redis_port)
 
+        self.maintain_loop = LoopingCall(self.maintain)
+        self.maintain_loop.clock = self.clock
+
         self.start_maintain_loop()
 
     def teardown(self):
@@ -54,7 +58,8 @@ class RetryMaintainerWorker(BaseWorker):
         yield add_ready(self.redis, prefix, reqs)
 
     def start_maintain_loop(self):
-        pass
+        self.maintain_loop.start(self.config.frequency, now=True)
 
     def stop_maintain_loop(self):
-        pass
+        if self.maintain_loop.running:
+            self.maintain_loop.stop()
