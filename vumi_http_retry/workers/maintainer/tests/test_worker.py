@@ -142,3 +142,7 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertEqual((yield zitems(worker.redis, k_p)), [])
 
         self.assertEqual(worker.maintains, [])
+
+        worker.stop_maintain_loop()
+        worker.clock.advance(5)
+        self.assertEqual(worker.maintains, [])
