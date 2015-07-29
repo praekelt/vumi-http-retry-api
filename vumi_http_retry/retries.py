@@ -29,20 +29,12 @@ def add_request(redis, prefix, req):
 
 
 @inlineCallbacks
-def peek_requests(redis, prefix, from_time, to_time):
-    k = requests_key(prefix)
-
-    returnValue([
-        json.loads(r)
-        for r in (yield redis.zrangebyscore(k, from_time, to_time))])
-
-
-@inlineCallbacks
 def pop_requests(redis, prefix, from_time, to_time):
     k = requests_key(prefix)
-    requests = yield peek_requests(redis, prefix, from_time, to_time)
-    yield redis.zremrangebyscore(k, from_time, to_time)
-    returnValue(requests)
+    reqs = yield redis.zrangebyscore(k, from_time, to_time)
+    if reqs:
+        yield redis.zrem(k, *reqs)
+    returnValue([json.loads(r) for r in reqs])
 
 
 @inlineCallbacks
