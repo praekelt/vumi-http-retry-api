@@ -2,8 +2,8 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 from vumi_http_retry.workers.sender.worker import RetrySenderWorker
-from vumi_http_retry.retries import pending_key
-from vumi_http_retry.tests.redis import zitems, delete
+from vumi_http_retry.retries import pending_key, ready_key, add_ready
+from vumi_http_retry.tests.redis import zitems, lvalues, delete
 from vumi_http_retry.tests.utils import ToyServer
 
 
@@ -30,6 +30,15 @@ class TestRetrySenderWorker(TestCase):
         self.addCleanup(self.teardown_worker, worker)
 
         returnValue(worker)
+
+    def patch_retry(self, worker):
+        reqs = []
+
+        def retry(req):
+            reqs.append(req)
+
+        self.patch(worker, 'retry', retry)
+        return reqs
 
     @inlineCallbacks
     def test_retry(self):
@@ -144,3 +153,39 @@ class TestRetrySenderWorker(TestCase):
         })
 
         self.assertEqual((yield zitems(worker.redis, pending_key('test'))), [])
+
+    @inlineCallbacks
+    def test_next_retry(self):
+        k = ready_key('test')
+        worker = yield self.mk_worker()
+        retries = self.patch_retry(worker)
+
+        reqs = [{
+            'owner_id': '1234',
+            'timestamp': t,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': t}
+        } for t in range(5, 25, 5)]
+
+        yield add_ready(worker.redis, 'test', reqs)
+
+        yield worker.next_retry()
+        self.assertEqual(retries, reqs[:1])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
+
+        yield worker.next_retry()
+        self.assertEqual(retries, reqs[:2])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[2:])
+
+        yield worker.next_retry()
+        self.assertEqual(retries, reqs[:3])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[3:])
+
+        yield worker.next_retry()
+        self.assertEqual(retries, reqs)
+        self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+        yield worker.next_retry()
+        self.assertEqual(retries, reqs)
+        self.assertEqual((yield lvalues(worker.redis, k)), [])
