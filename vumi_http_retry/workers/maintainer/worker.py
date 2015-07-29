@@ -13,7 +13,7 @@ from vumi_http_retry.retries import pop_pending, add_ready
 
 class RetryMaintainerConfig(Config):
     frequency = ConfigInt(
-        "How often the working set should be updated (in seconds)",
+        "How often the ready set should be updated (in seconds)",
         default=60)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
