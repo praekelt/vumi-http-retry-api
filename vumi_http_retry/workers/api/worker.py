@@ -10,8 +10,8 @@ from confmodel import Config
 from confmodel.fields import ConfigText, ConfigInt
 from txredis.client import RedisClient
 
-from vumi_http_retry.retries import add_pending
 from vumi_http_retry.worker import BaseWorker
+from vumi_http_retry.retries import add_pending
 
 
 class RetryApiConfig(Config):
