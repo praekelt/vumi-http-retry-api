@@ -2,6 +2,8 @@ import json
 
 from twisted.internet.defer import inlineCallbacks, returnValue
 
+import treq
+
 
 def pending_key(prefix):
     return '.'.join((prefix, 'requests'))
@@ -49,3 +51,26 @@ def add_ready(redis, prefix, reqs):
 def pop_ready(redis, prefix):
     result = yield redis.lpop(ready_key(prefix))
     returnValue(json.loads(result) if result is not None else result)
+
+
+def retry(req, **overrides):
+    req['attempts'] = req['attempts'] + 1
+    d = req['request']
+
+    opts = {
+        'method': d['method'],
+        'url': d['url'],
+        'data': d.get('data'),
+        'headers': d.get('headers')
+    }
+
+    opts.update(overrides)
+    return treq.request(**opts)
+
+
+def should_retry(resp):
+    return 500 <= resp.code < 600
+
+
+def can_reattempt(req):
+    return req['attempts'] < len(req['intervals'])
