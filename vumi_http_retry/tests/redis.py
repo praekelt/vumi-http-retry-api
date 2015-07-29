@@ -21,6 +21,11 @@ def zitems(redis, k):
 
 
 @inlineCallbacks
+def lvalues(redis, k):
+    returnValue([json.loads(d) for d in (yield redis.lrange(k, 0, -1))])
+
+
+@inlineCallbacks
 def delete(redis, expr):
     for k in (yield redis.keys(expr)):
         yield redis.delete(k)

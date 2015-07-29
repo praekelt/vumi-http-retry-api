@@ -10,8 +10,8 @@ from confmodel import Config
 from confmodel.fields import ConfigText, ConfigInt
 from txredis.client import RedisClient
 
-from vumi_http_retry.retries import add_request
 from vumi_http_retry.worker import BaseWorker
+from vumi_http_retry.retries import add_pending
 
 
 class RetryApiConfig(Config):
@@ -61,7 +61,7 @@ class RetryApiWorker(BaseWorker):
         # TODO rate limiting
         data = json.loads(req.content.read())
 
-        yield add_request(self.redis, self.config.redis_prefix, {
+        yield add_pending(self.redis, self.config.redis_prefix, {
             'owner_id': req.getHeader('x-owner-id'),
             'timestamp': time.time(),
             'request': data['request'],

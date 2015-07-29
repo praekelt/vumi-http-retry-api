@@ -9,7 +9,7 @@ from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.workers.api.worker import RetryApiWorker
-from vumi_http_retry.retries import requests_key
+from vumi_http_retry.retries import pending_key
 from vumi_http_retry.tests.redis import zitems, delete
 
 
@@ -56,7 +56,7 @@ class TestRetryApiWorker(TestCase):
 
     @inlineCallbacks
     def test_requests(self):
-        k = requests_key('test')
+        k = pending_key('test')
 
         resp = yield self.post('/requests/', {
             'intervals': [30, 90],
