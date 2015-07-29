@@ -33,7 +33,6 @@ class TestRetryMaintainerWorker(TestCase):
         yield worker.setup(Clock())
         self.addCleanup(self.teardown_worker, worker)
 
-        worker.stop_maintain_loop()
         returnValue(worker)
 
     @inlineCallbacks
@@ -45,6 +44,8 @@ class TestRetryMaintainerWorker(TestCase):
             'redis_prefix': 'test',
             'frequency': 20,
         })
+
+        worker.stop_maintain_loop()
 
         for t in range(5, 25, 5):
             yield add_pending(worker.redis, 'test', {
@@ -108,7 +109,6 @@ class TestRetryMaintainerWorker(TestCase):
         pending = yield zitems(worker.redis, pending_key('test'))
         pending_reqs = [v for t, v in pending]
 
-        worker.start_maintain_loop()
         worker.maintains.pop()
 
         worker.clock.advance(5)
