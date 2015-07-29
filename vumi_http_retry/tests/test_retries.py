@@ -2,7 +2,7 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
-    pending_key, ready_key, add_pending, peek_pending, pop_pending,
+    pending_key, ready_key, add_pending, pop_pending,
     add_ready, pop_ready)
 
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
@@ -113,35 +113,6 @@ class TestRetries(TestCase):
         ])
 
     @inlineCallbacks
-    def test_peek_pending(self):
-        k = pending_key('test')
-
-        for t in range(5, 20, 5):
-            yield add_pending(self.redis, 'test', {
-                'owner_id': '1234',
-                'timestamp': t,
-                'attempts': 0,
-                'intervals': [10],
-                'request': {'foo': t}
-            })
-
-        pending = yield zitems(self.redis, k)
-        pending_reqs = [r for t, r in pending]
-
-        result = yield peek_pending(self.redis, 'test', 0, 10 + 7)
-        self.assertEqual(result, pending_reqs[:1])
-        self.assertEqual((yield zitems(self.redis, k)), pending)
-
-        result = yield peek_pending(self.redis, 'test', 0, 10 + 13)
-        self.assertEqual(result, pending_reqs[:2])
-        self.assertEqual((yield zitems(self.redis, k)), pending)
-
-        result = yield peek_pending(self.redis, 'test', 22, 10 + 17)
-
-        self.assertEqual(result, pending_reqs[2:])
-        self.assertEqual((yield zitems(self.redis, k)), pending)
-
-    @inlineCallbacks
     def test_pop_pending(self):
         k = pending_key('test')
 
@@ -167,6 +138,10 @@ class TestRetries(TestCase):
         self.assertEqual(
             (yield zitems(self.redis, k)),
             pending[2:3] + pending[5:])
+
+        result = yield pop_pending(self.redis, 'test', 0, 50)
+        self.assertEqual(result, pending_reqs[2:3] + pending_reqs[5:])
+        self.assertEqual((yield zitems(self.redis, k)), [])
 
     @inlineCallbacks
     def test_add_ready(self):
