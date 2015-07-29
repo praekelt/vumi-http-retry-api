@@ -1,9 +1,11 @@
+import treq
+
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
     pending_key, ready_key, add_pending, pop_pending,
-    add_ready, pop_ready, retry)
+    add_ready, pop_ready, retry, should_retry)
 from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
@@ -329,3 +331,22 @@ class TestRetries(TestCase):
 
         yield retry(req, persistent=False)
         self.assertEqual(req['attempts'], 3)
+
+    @inlineCallbacks
+    def test_should_retry(self):
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/<int:code>')
+        def route(req, code):
+            req.setResponseCode(code)
+
+        def send(code):
+            return treq.get("%s/%s" % (srv.url, code), persistent=False)
+
+        self.assertFalse(should_retry((yield send(200))))
+        self.assertFalse(should_retry((yield send(201))))
+        self.assertFalse(should_retry((yield send(400))))
+        self.assertFalse(should_retry((yield send(404))))
+        self.assertTrue(should_retry((yield send(500))))
+        self.assertTrue(should_retry((yield send(504))))
+        self.assertTrue(should_retry((yield send(599))))

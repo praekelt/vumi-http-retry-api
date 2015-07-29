@@ -66,3 +66,7 @@ def retry(req, **overrides):
 
     opts.update(overrides)
     return treq.request(**opts)
+
+
+def should_retry(resp):
+    return 500 <= resp.code < 600
