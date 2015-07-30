@@ -1,4 +1,3 @@
-from twisted.python import log
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import (
@@ -38,15 +37,6 @@ class TestRetrySenderWorker(TestCase):
 
         self.patch(RetrySenderWorker, 'retry', staticmethod(retry))
         return reqs
-
-    def patch_log(self, type):
-        msgs = []
-
-        def logger(msg):
-            msgs.append(msg)
-
-        self.patch(log, type, logger)
-        return msgs
 
     def patch_next_req(self):
         pops = []
@@ -176,7 +166,6 @@ class TestRetrySenderWorker(TestCase):
     @inlineCallbacks
     def test_loop(self):
         k = ready_key('test')
-        msgs = self.patch_log('msg')
         retries = self.patch_retry()
         worker = yield self.mk_worker({'frequency': 5})
 
@@ -189,9 +178,6 @@ class TestRetrySenderWorker(TestCase):
         } for t in range(5, 30, 5)]
 
         yield add_ready(worker.redis, 'test', reqs)
-
-        self.assertEqual(
-            msgs.pop(), 'Ready set empty, rescheduling retry loop')
 
         worker.clock.advance(5)
         req = yield retries.get()
@@ -214,6 +200,8 @@ class TestRetrySenderWorker(TestCase):
         self.assertEqual(req, reqs[4])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
 
+        worker.clock.advance(10)
+
         reqs = [{
             'owner_id': '1234',
             'timestamp': t,
@@ -224,9 +212,6 @@ class TestRetrySenderWorker(TestCase):
 
         yield add_ready(worker.redis, 'test', reqs)
 
-        self.assertEqual(
-            msgs.pop(), 'Ready set empty, rescheduling retry loop')
-
         worker.clock.advance(5)
         req = yield retries.get()
         self.assertEqual(req, reqs[0])
@@ -236,8 +221,6 @@ class TestRetrySenderWorker(TestCase):
         req = yield retries.get()
         self.assertEqual(req, reqs[1])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
-
-        self.assertEqual(msgs, [])
 
     @inlineCallbacks
     def test_stop_after_pop_non_empty(self):
@@ -274,7 +257,6 @@ class TestRetrySenderWorker(TestCase):
         request, we shouldn't reschedule the loop if we find out the ready set
         is empty.
         """
-        msgs = self.patch_log('msg')
         self.patch_retry()
         pops = self.patch_next_req()
         worker = yield self.mk_worker({'frequency': 5})
@@ -285,5 +267,4 @@ class TestRetrySenderWorker(TestCase):
 
         pops.pop().callback(None)
         self.assertEqual(pops, [])
-        self.assertEqual(msgs, [])
         self.assertTrue(worker.stopped)

@@ -1,5 +1,5 @@
-from twisted.python import log
 from twisted.internet import reactor
+from twisted.internet.task import LoopingCall
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, Deferred
 
@@ -14,7 +14,7 @@ from vumi_http_retry.retries import (
 
 class RetrySenderConfig(Config):
     frequency = ConfigInt(
-        "How soon retrying should be rescheduled when the ready set is empty",
+        "How soon often the ready set should be polled",
         default=60)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
@@ -58,9 +58,11 @@ class RetrySenderWorker(BaseWorker):
             self.config.redis_host,
             self.config.redis_port)
 
-        self.delayed = None
         self.stopping_d = Deferred()
         self.state = 'stopped'
+
+        self.loop = LoopingCall(self.poll)
+        self.loop.clock = self.clock
 
         self.start()
 
@@ -79,36 +81,27 @@ class RetrySenderWorker(BaseWorker):
         if should_retry(resp) and can_reattempt(req):
             yield add_pending(self.redis, self.config.redis_prefix, req)
 
-    def reschedule(self):
-        self.delayed = self.clock.callLater(
-            self.config.frequency,
-            self.start)
-
     def safe_to_stop(self):
         if self.stopping:
             self.state = 'stopped'
             self.stopping_d.callback(None)
 
     @inlineCallbacks
-    def start(self):
-        self.state = 'started'
-
+    def poll(self):
         while True:
             if self.stopping:
                 break
 
             req = yield self.next_req()
 
-            if not req:
-                if not self.stopping:
-                    log.msg("Ready set empty, rescheduling retry loop")
-                    self.reschedule()
-                break
-
-            # retry the request, even if stopping
-            yield self.retry(req)
+            if req:
+                yield self.retry(req)
 
         self.safe_to_stop()
+
+    def start(self):
+        self.state = 'started'
+        self.loop.start(self.config.frequency, now=True)
 
     @inlineCallbacks
     def stop(self):
@@ -116,10 +109,4 @@ class RetrySenderWorker(BaseWorker):
             return
 
         self.state = 'stopping'
-
-        if self.delayed is not None and self.delayed.active():
-            self.delayed.cancel()
-            self.delayed = None
-            self.safe_to_stop()
-
         yield self.stopping_d
