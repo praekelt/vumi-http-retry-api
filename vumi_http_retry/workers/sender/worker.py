@@ -52,8 +52,8 @@ class RetrySenderWorker(BaseWorker):
         self.start_retry_loop()
 
     def teardown(self):
-        self.redis.transport.loseConnection()
         self.stop_retry_loop()
+        self.redis.transport.loseConnection()
 
     @inlineCallbacks
     def next_retry(self):
