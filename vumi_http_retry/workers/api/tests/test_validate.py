@@ -5,6 +5,7 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 import treq
+from klein import Klein
 
 from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.workers.api.validate import (
@@ -14,7 +15,16 @@ from vumi_http_retry.workers.api.validate import (
 class TestValidate(TestCase):
     @inlineCallbacks
     def test_validate_fail(self):
-        srv = yield ToyServer.from_test(self)
+        class Api(object):
+            app = Klein()
+
+            @app.route('/')
+            @validate(
+                lambda _: errs1,
+                lambda _: None,
+                lambda _: errs2)
+            def route(self, req):
+                pass
 
         errs1 = [{
             'type': '1',
@@ -26,14 +36,7 @@ class TestValidate(TestCase):
             'message': 'B'
         }]
 
-        @srv.app.route('/')
-        @validate(
-            lambda _: errs1,
-            lambda _: None,
-            lambda _: errs2)
-        def route(req):
-            pass
-
+        srv = yield ToyServer.from_test(self, Api().app)
         resp = yield treq.get(srv.url, persistent=False)
         self.assertEqual(resp.code, http.BAD_REQUEST)
         self.assertEqual(json.loads((yield resp.content())), {
@@ -42,28 +45,32 @@ class TestValidate(TestCase):
 
     @inlineCallbacks
     def test_validate_pass(self):
-        srv = yield ToyServer.from_test(self)
+        class Api(object):
+            app = Klein()
 
-        @srv.app.route('/')
-        @validate(
-            lambda _: None,
-            lambda _: None)
-        def route(req):
-            return 'ok'
+            @app.route('/')
+            @validate(
+                lambda _: None,
+                lambda _: None)
+            def route(self, req):
+                return 'ok'
 
+        srv = yield ToyServer.from_test(self, Api().app)
         resp = yield treq.get(srv.url, persistent=False)
         self.assertEqual(resp.code, http.OK)
         self.assertEqual((yield resp.content()), 'ok')
 
     @inlineCallbacks
     def test_has_header(self):
-        srv = yield ToyServer.from_test(self)
+        class Api(object):
+            app = Klein()
 
-        @srv.app.route('/')
-        @validate(has_header('X-Foo'))
-        def route(req):
-            pass
+            @app.route('/')
+            @validate(has_header('X-Foo'))
+            def route(self, req):
+                pass
 
+        srv = yield ToyServer.from_test(self, Api().app)
         resp = yield treq.get(srv.url, persistent=False)
 
         self.assertEqual(json.loads((yield resp.content())), {
@@ -82,15 +89,15 @@ class TestValidate(TestCase):
 
     @inlineCallbacks
     def test_body_schema(self):
-        srv = yield ToyServer.from_test(self)
+        class Api(object):
+            app = Klein()
 
-        @srv.app.route('/')
-        @validate(body_schema({
-            'properties': {'foo': {'type': 'string'}}
-        }))
-        def route(req):
-            pass
+            @app.route('/')
+            @validate(body_schema({'properties': {'foo': {'type': 'string'}}}))
+            def route(self, req):
+                pass
 
+        srv = yield ToyServer.from_test(self, Api().app)
         resp = yield treq.get(
             srv.url,
             persistent=False,
