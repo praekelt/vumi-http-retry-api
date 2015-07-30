@@ -93,9 +93,34 @@ class TestRetryApiWorker(TestCase):
         })
 
         self.assertEqual(resp.code, http.BAD_REQUEST)
-        self.assertEqual((yield resp.content()), json.dumps({
+        self.assertEqual(json.loads((yield resp.content())), {
             'errors': [{
                 'type': 'header_missing',
                 'message': "Header 'X-Owner-ID' is missing"
             }]
-        }))
+        })
+
+    @inlineCallbacks
+    def test_requests_bad_body(self):
+        resp = yield self.post('/requests/', {
+            'intervals': 'foo',
+            'request': {
+                'url': 23,
+                'method': 'GET',
+                'headers': 'bar'
+            }
+        }, headers={'X-Owner-ID': '1234'})
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual(json.loads((yield resp.content())), {
+            "errors": [{
+                "message": "u'foo' is not of type 'array'",
+                "type": "invalid_body"
+            }, {
+                "message": "23 is not of type 'string'",
+                "type": "invalid_body"
+            }, {
+                "message": "u'bar' is not of type 'object'",
+                "type": "invalid_body"
+            }]
+        })
