@@ -58,10 +58,11 @@ class RetrySenderWorker(BaseWorker):
             self.config.redis_host,
             self.config.redis_port)
 
-        self.state = 'stopped'
         self.delayed = None
-        self.start()
         self.stopping_d = Deferred()
+        self.state = 'stopped'
+
+        self.start()
 
     @inlineCallbacks
     def teardown(self):
@@ -115,10 +116,9 @@ class RetrySenderWorker(BaseWorker):
             return
 
         self.state = 'stopping'
-        call = self.delayed
 
-        if call is not None and call.active():
-            call.cancel()
+        if self.delayed is not None and self.delayed.active():
+            self.delayed.cancel()
             self.delayed = None
             self.safe_to_stop()
 
