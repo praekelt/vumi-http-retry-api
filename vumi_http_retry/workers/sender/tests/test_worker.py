@@ -11,7 +11,6 @@ from vumi_http_retry.tests.utils import ToyServer
 
 
 class TestRetrySenderWorker(TestCase):
-    timeout = 1
     @inlineCallbacks
     def teardown_worker(self, worker):
         yield delete(worker.redis, 'test.*')
