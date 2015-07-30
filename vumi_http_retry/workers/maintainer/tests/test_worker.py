@@ -45,7 +45,7 @@ class TestRetryMaintainerWorker(TestCase):
             'frequency': 20,
         })
 
-        worker.stop_maintain_loop()
+        worker.stop()
 
         for t in range(5, 25, 5):
             yield add_pending(worker.redis, 'test', {
@@ -88,7 +88,7 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertEqual((yield zitems(worker.redis, k_p)), [])
 
     @inlineCallbacks
-    def test_maintain_loop(self):
+    def test_loop(self):
         k_p = pending_key('test')
         k_r = ready_key('test')
 
@@ -143,6 +143,6 @@ class TestRetryMaintainerWorker(TestCase):
 
         self.assertEqual(worker.maintains, [])
 
-        worker.stop_maintain_loop()
+        worker.stop()
         worker.clock.advance(5)
         self.assertEqual(worker.maintains, [])

@@ -42,14 +42,14 @@ class RetryMaintainerWorker(BaseWorker):
             self.config.redis_host,
             self.config.redis_port)
 
-        self.maintain_loop = LoopingCall(self.maintain)
-        self.maintain_loop.clock = self.clock
+        self.loop = LoopingCall(self.maintain)
+        self.loop.clock = self.clock
 
-        self.start_maintain_loop()
+        self.start()
 
     def teardown(self):
         self.redis.transport.loseConnection()
-        self.stop_maintain_loop()
+        self.stop()
 
     @inlineCallbacks
     def maintain(self):
@@ -57,9 +57,9 @@ class RetryMaintainerWorker(BaseWorker):
         reqs = yield pop_pending(self.redis, prefix, 0, self.clock.seconds())
         yield add_ready(self.redis, prefix, reqs)
 
-    def start_maintain_loop(self):
-        self.maintain_loop.start(self.config.frequency, now=True)
+    def start(self):
+        self.loop.start(self.config.frequency, now=True)
 
-    def stop_maintain_loop(self):
-        if self.maintain_loop.running:
-            self.maintain_loop.stop()
+    def stop(self):
+        if self.loop.running:
+            self.loop.stop()
