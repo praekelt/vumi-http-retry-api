@@ -22,3 +22,16 @@ def validate(*validators):
         return wrapper
 
     return validator
+
+
+def has_header(name):
+    def validator(req):
+        if not req.requestHeaders.hasHeader(name):
+            return [{
+                'type': 'header_missing',
+                'message': "Header '%s' is missing" % (name,)
+            }]
+        else:
+            return []
+
+    return validator

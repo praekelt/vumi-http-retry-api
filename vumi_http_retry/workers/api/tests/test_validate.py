@@ -7,7 +7,7 @@ from twisted.internet.defer import inlineCallbacks
 import treq
 
 from vumi_http_retry.tests.utils import ToyServer
-from vumi_http_retry.workers.api.validate import validate
+from vumi_http_retry.workers.api.validate import validate, has_header
 
 
 class TestValidate(TestCase):
@@ -53,3 +53,28 @@ class TestValidate(TestCase):
         resp = yield treq.get(srv.url, persistent=False)
         self.assertEqual(resp.code, http.OK)
         self.assertEqual((yield resp.content()), 'ok')
+
+    @inlineCallbacks
+    def test_has_header(self):
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/')
+        @validate(has_header('X-Foo'))
+        def route(req):
+            pass
+
+        resp = yield treq.get(srv.url, persistent=False)
+
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'type': 'header_missing',
+                'message': "Header 'X-Foo' is missing"
+            }]
+        })
+
+        resp = yield treq.get(
+            srv.url,
+            headers={'X-Foo': ['bar']},
+            persistent=False)
+
+        self.assertEqual(resp.code, http.OK)
