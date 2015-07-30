@@ -7,7 +7,8 @@ from twisted.internet.defer import inlineCallbacks
 import treq
 
 from vumi_http_retry.tests.utils import ToyServer
-from vumi_http_retry.workers.api.validate import validate, has_header
+from vumi_http_retry.workers.api.validate import (
+    validate, has_header, body_schema)
 
 
 class TestValidate(TestCase):
@@ -76,5 +77,35 @@ class TestValidate(TestCase):
             srv.url,
             headers={'X-Foo': ['bar']},
             persistent=False)
+
+        self.assertEqual(resp.code, http.OK)
+
+    @inlineCallbacks
+    def test_body_schema(self):
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/')
+        @validate(body_schema({
+            'properties': {'foo': {'type': 'string'}}
+        }))
+        def route(req):
+            pass
+
+        resp = yield treq.get(
+            srv.url,
+            persistent=False,
+            data=json.dumps({'foo': 23}))
+
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'type': 'invalid_body',
+                'message': "23 is not of type 'string'"
+            }]
+        })
+
+        resp = yield treq.get(
+            srv.url,
+            persistent=False,
+            data=json.dumps({'foo': 'bar'}))
 
         self.assertEqual(resp.code, http.OK)

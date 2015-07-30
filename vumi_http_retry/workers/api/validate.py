@@ -1,6 +1,9 @@
+import json
 from functools import wraps
 
 from twisted.web import http
+
+from jsonschema import Draft4Validator
 
 from vumi_http_retry.workers.api.utils import response
 
@@ -33,5 +36,19 @@ def has_header(name):
             }]
         else:
             return []
+
+    return validator
+
+
+def body_schema(schema):
+    json_validator = Draft4Validator(schema)
+
+    def validator(req):
+        body = json.loads(req.content.read())
+
+        return [{
+            'type': 'invalid_body',
+            'message': e.message
+        } for e in json_validator.iter_errors(body)]
 
     return validator

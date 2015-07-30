@@ -17,6 +17,7 @@ setup(
         'confmodel',
         'PyYAML',
         'txredis',
+        'jsonschema',
    ],
     classifiers=[
         'Development Status :: 4 - Beta',
