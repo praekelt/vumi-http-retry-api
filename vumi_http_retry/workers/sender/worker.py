@@ -90,8 +90,10 @@ class RetrySenderWorker(BaseWorker):
 
             req = yield self.next_req()
 
-            if req:
-                yield self.retry(req)
+            if not req:
+                break
+
+            yield self.retry(req)
 
     def start(self):
         self.state = 'started'
