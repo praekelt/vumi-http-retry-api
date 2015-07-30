@@ -245,7 +245,6 @@ class TestRetrySenderWorker(TestCase):
         If the loop was stopped, but we've already asked redis for the next
         request, we should retry the request.
         """
-        k = ready_key('test')
         retries = self.patch_retry()
         pops = self.patch_next_req()
         worker = yield self.mk_worker({'frequency': 5})
@@ -275,7 +274,6 @@ class TestRetrySenderWorker(TestCase):
         request, we shouldn't reschedule the loop if we find out the ready set
         is empty.
         """
-        k = ready_key('test')
         msgs = self.patch_log('msg')
         self.patch_retry()
         pops = self.patch_next_req()
