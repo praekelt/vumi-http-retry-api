@@ -1,7 +1,7 @@
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
-from twisted.internet.task import LoopingCall
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, Deferred
 
 from txredis.client import RedisClient
 from confmodel import Config
@@ -14,7 +14,7 @@ from vumi_http_retry.retries import (
 
 class RetrySenderConfig(Config):
     frequency = ConfigInt(
-        "How often the ready set should be polled (in seconds)",
+        "How soon retrying should be rescheduled when the ready set is empty",
         default=60)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
@@ -33,6 +33,18 @@ class RetrySenderConfig(Config):
 class RetrySenderWorker(BaseWorker):
     CONFIG_CLS = RetrySenderConfig
 
+    @property
+    def started(self):
+        return self.state == 'started'
+
+    @property
+    def stopping(self):
+        return self.state == 'stopping'
+
+    @property
+    def stopped(self):
+        return self.state == 'stopped'
+
     @inlineCallbacks
     def setup(self, clock=None):
         if clock is None:
@@ -46,22 +58,18 @@ class RetrySenderWorker(BaseWorker):
             self.config.redis_host,
             self.config.redis_port)
 
-        self.retry_loop = LoopingCall(self.next_retry)
-        self.retry_loop.clock = self.clock
-
-        self.start_retry_loop()
-
-    def teardown(self):
-        self.stop_retry_loop()
-        self.redis.transport.loseConnection()
+        self.state = 'stopped'
+        self.delayed = None
+        self.start()
+        self.stopping_d = Deferred()
 
     @inlineCallbacks
-    def next_retry(self):
-        prefix = self.config.redis_prefix
-        req = yield pop_ready(self.redis, prefix)
+    def teardown(self):
+        yield self.stop()
+        self.redis.transport.loseConnection()
 
-        if req:
-            yield self.retry(req)
+    def next_req(self):
+        return pop_ready(self.redis, self.config.redis_prefix)
 
     @inlineCallbacks
     def retry(self, req):
@@ -70,9 +78,48 @@ class RetrySenderWorker(BaseWorker):
         if should_retry(resp) and can_reattempt(req):
             yield add_pending(self.redis, self.config.redis_prefix, req)
 
-    def start_retry_loop(self):
-        self.retry_loop.start(self.config.frequency, now=True)
+    def reschedule(self):
+        self.delayed = self.clock.callLater(
+            self.config.frequency,
+            self.start)
 
-    def stop_retry_loop(self):
-        if self.retry_loop.running:
-            self.retry_loop.stop()
+    def safe_to_stop(self):
+        if self.stopping:
+            self.state = 'stopped'
+            self.stopping_d.callback(None)
+
+    @inlineCallbacks
+    def start(self):
+        self.state = 'started'
+
+        while True:
+            if self.stopping:
+                break
+
+            req = yield self.next_req()
+
+            if not req:
+                if not self.stopping:
+                    log.msg("Ready set empty, rescheduling retry loop")
+                    self.reschedule()
+                break
+
+            # retry the request, even if stopping
+            yield self.retry(req)
+
+        self.safe_to_stop()
+
+    @inlineCallbacks
+    def stop(self):
+        if self.stopped or self.stopping:
+            return
+
+        self.state = 'stopping'
+        call = self.delayed
+
+        if call is not None and call.active():
+            call.cancel()
+            self.delayed = None
+            self.safe_to_stop()
+
+        yield self.stopping_d

@@ -1,6 +1,8 @@
+from twisted.python import log
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import (
+    inlineCallbacks, returnValue, DeferredQueue, Deferred)
 
 from vumi_http_retry.workers.sender.worker import RetrySenderWorker
 from vumi_http_retry.retries import pending_key, ready_key, add_ready
@@ -8,19 +10,8 @@ from vumi_http_retry.tests.redis import zitems, lvalues, delete
 from vumi_http_retry.tests.utils import ToyServer
 
 
-class ToyRetrySenderWorker(RetrySenderWorker):
-    @inlineCallbacks
-    def setup(self, *a, **kw):
-        self.retries = []
-        yield super(ToyRetrySenderWorker, self).setup(*a, **kw)
-
-    def next_retry(self):
-        d = super(ToyRetrySenderWorker, self).next_retry()
-        self.retries.append(d)
-        return d
-
-
 class TestRetrySenderWorker(TestCase):
+    timeout = 1
     @inlineCallbacks
     def teardown_worker(self, worker):
         yield delete(worker.redis, 'test.*')
@@ -34,20 +25,40 @@ class TestRetrySenderWorker(TestCase):
         config['redis_prefix'] = 'test'
         config.setdefault('overrides', {}).update({'persistent': False})
 
-        worker = ToyRetrySenderWorker(config)
+        worker = RetrySenderWorker(config)
         yield worker.setup(Clock())
         self.addCleanup(self.teardown_worker, worker)
 
         returnValue(worker)
 
-    def patch_retry(self, worker):
-        reqs = []
+    def patch_retry(self):
+        reqs = DeferredQueue()
 
         def retry(req):
-            reqs.append(req)
+            reqs.put(req)
 
-        self.patch(worker, 'retry', retry)
+        self.patch(RetrySenderWorker, 'retry', staticmethod(retry))
         return reqs
+
+    def patch_log(self, type):
+        msgs = []
+
+        def logger(msg):
+            msgs.append(msg)
+
+        self.patch(log, type, logger)
+        return msgs
+
+    def patch_next_req(self):
+        pops = []
+
+        def pop():
+            d = Deferred()
+            pops.append(d)
+            return d
+
+        self.patch(RetrySenderWorker, 'next_req', staticmethod(pop))
+        return pops
 
     @inlineCallbacks
     def test_retry(self):
@@ -164,10 +175,11 @@ class TestRetrySenderWorker(TestCase):
         self.assertEqual((yield zitems(worker.redis, pending_key('test'))), [])
 
     @inlineCallbacks
-    def test_next_retry(self):
+    def test_loop(self):
         k = ready_key('test')
-        worker = yield self.mk_worker()
-        retries = self.patch_retry(worker)
+        msgs = self.patch_log('msg')
+        retries = self.patch_retry()
+        worker = yield self.mk_worker({'frequency': 5})
 
         reqs = [{
             'owner_id': '1234',
@@ -175,73 +187,106 @@ class TestRetrySenderWorker(TestCase):
             'attempts': 0,
             'intervals': [10],
             'request': {'foo': t}
-        } for t in range(5, 25, 5)]
+        } for t in range(5, 30, 5)]
 
         yield add_ready(worker.redis, 'test', reqs)
 
-        yield worker.next_retry()
-        self.assertEqual(retries, reqs[:1])
+        self.assertEqual(
+            msgs.pop(), 'Ready set empty, rescheduling retry loop')
+
+        worker.clock.advance(5)
+        req = yield retries.get()
+        self.assertEqual(req, reqs[0])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
 
-        yield worker.next_retry()
-        self.assertEqual(retries, reqs[:2])
+        req = yield retries.get()
+        self.assertEqual(req, reqs[1])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[2:])
 
-        yield worker.next_retry()
-        self.assertEqual(retries, reqs[:3])
+        req = yield retries.get()
+        self.assertEqual(req, reqs[2])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[3:])
 
-        yield worker.next_retry()
-        self.assertEqual(retries, reqs)
+        req = yield retries.get()
+        self.assertEqual(req, reqs[3])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[4:])
+
+        req = yield retries.get()
+        self.assertEqual(req, reqs[4])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
 
-        yield worker.next_retry()
-        self.assertEqual(retries, reqs)
+        reqs = [{
+            'owner_id': '1234',
+            'timestamp': t,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': t}
+        } for t in range(5, 15, 5)]
+
+        yield add_ready(worker.redis, 'test', reqs)
+
+        self.assertEqual(
+            msgs.pop(), 'Ready set empty, rescheduling retry loop')
+
+        worker.clock.advance(5)
+        req = yield retries.get()
+        self.assertEqual(req, reqs[0])
+        self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
+
+        worker.clock.advance(5)
+        req = yield retries.get()
+        self.assertEqual(req, reqs[1])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+        self.assertEqual(msgs, [])
 
     @inlineCallbacks
-    def test_retry_loop(self):
+    def test_stop_after_pop_non_empty(self):
+        """
+        If the loop was stopped, but we've already asked redis for the next
+        request, we should retry the request.
+        """
         k = ready_key('test')
+        retries = self.patch_retry()
+        pops = self.patch_next_req()
         worker = yield self.mk_worker({'frequency': 5})
-        retries = self.patch_retry(worker)
 
-        reqs = [{
+        self.assertTrue(worker.started)
+        worker.stop()
+        self.assertTrue(worker.stopping)
+
+        popped_req = {
             'owner_id': '1234',
-            'timestamp': t,
+            'timestamp': 5,
             'attempts': 0,
             'intervals': [10],
-            'request': {'foo': t}
-        } for t in range(5, 25, 5)]
+            'request': {'foo': 5}
+        }
+        pops.pop().callback(popped_req)
 
-        yield add_ready(worker.redis, 'test', reqs)
+        req = yield retries.get()
+        self.assertEqual(req, popped_req)
+        self.assertEqual(pops, [])
+        self.assertTrue(worker.stopped)
 
-        worker.retries.pop()
+    @inlineCallbacks
+    def test_stop_after_pop_empty(self):
+        """
+        If the loop was stopped, but we've already asked redis for the next
+        request, we shouldn't reschedule the loop if we find out the ready set
+        is empty.
+        """
+        k = ready_key('test')
+        msgs = self.patch_log('msg')
+        self.patch_retry()
+        pops = self.patch_next_req()
+        worker = yield self.mk_worker({'frequency': 5})
 
-        worker.clock.advance(5)
-        yield worker.retries.pop()
-        self.assertEqual(retries, reqs[:1])
-        self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
+        self.assertTrue(worker.started)
+        worker.stop()
+        self.assertTrue(worker.stopping)
 
-        worker.clock.advance(5)
-        yield worker.retries.pop()
-        self.assertEqual(retries, reqs[:2])
-        self.assertEqual((yield lvalues(worker.redis, k)), reqs[2:])
-
-        worker.clock.advance(5)
-        yield worker.retries.pop()
-        self.assertEqual(retries, reqs[:3])
-        self.assertEqual((yield lvalues(worker.redis, k)), reqs[3:])
-
-        worker.clock.advance(5)
-        yield worker.retries.pop()
-        self.assertEqual(retries, reqs)
-        self.assertEqual((yield lvalues(worker.redis, k)), [])
-
-        worker.clock.advance(5)
-        yield worker.retries.pop()
-        self.assertEqual(retries, reqs)
-        self.assertEqual((yield lvalues(worker.redis, k)), [])
-
-        worker.stop_retry_loop()
-        worker.clock.advance(5)
-        self.assertEqual(worker.retries, [])
+        pops.pop().callback(None)
+        self.assertEqual(pops, [])
+        self.assertEqual(msgs, [])
+        self.assertTrue(worker.stopped)
