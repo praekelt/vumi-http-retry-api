@@ -109,4 +109,8 @@ class RetrySenderWorker(BaseWorker):
             return
 
         self.state = 'stopping'
+
+        if self.loop.running:
+            self.loop.stop()
+
         yield self.stopping_d
