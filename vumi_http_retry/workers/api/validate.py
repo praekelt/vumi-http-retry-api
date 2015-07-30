@@ -28,7 +28,7 @@ def validate(*validators):
 
 
 def has_header(name):
-    def validator(req):
+    def validator(req, *a, **kw):
         if not req.requestHeaders.hasHeader(name):
             return [{
                 'type': 'header_missing',
@@ -43,7 +43,7 @@ def has_header(name):
 def body_schema(schema):
     json_validator = Draft4Validator(schema)
 
-    def validator(req, body):
+    def validator(req, body, *a, **kw):
         return [{
             'type': 'invalid_body',
             'message': e.message
