@@ -7,8 +7,11 @@ from klein import Klein
 
 class ToyServer(object):
     @inlineCallbacks
-    def setup(self):
-        self.app = Klein()
+    def setup(self, app=None):
+        if app is None:
+            app = Klein()
+
+        self.app = app
         self.server = yield reactor.listenTCP(0, Site(self.app.resource()))
         addr = self.server.getHost()
         self.url = "http://%s:%s" % (addr.host, addr.port)
@@ -18,8 +21,8 @@ class ToyServer(object):
 
     @classmethod
     @inlineCallbacks
-    def from_test(cls, test):
+    def from_test(cls, test, app=None):
         server = cls()
-        yield server.setup()
+        yield server.setup(app)
         test.addCleanup(server.teardown)
         returnValue(server)
