@@ -14,7 +14,7 @@ from vumi_http_retry.retries import (
 
 class RetrySenderConfig(Config):
     frequency = ConfigInt(
-        "How soon often the ready set should be polled",
+        "How often the ready set should be polled",
         default=60)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
