@@ -12,6 +12,8 @@ from txredis.client import RedisClient
 from vumi_http_retry.worker import BaseWorker
 from vumi_http_retry.retries import add_pending
 from vumi_http_retry.workers.api.utils import response
+from vumi_http_retry.workers.api.validate import (
+    validate, has_header)
 
 
 class RetryApiConfig(Config):
@@ -47,6 +49,8 @@ class RetryApiWorker(BaseWorker):
         return response(req, {})
 
     @app.route('/requests/', methods=['POST'])
+    @validate(
+        has_header('X-Owner-ID'))
     @inlineCallbacks
     def route_requests(self, req):
         # TODO validation

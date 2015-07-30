@@ -81,3 +81,21 @@ class TestRetryApiWorker(TestCase):
                 }
             }),
         ])
+
+    @inlineCallbacks
+    def test_requests_no_owner_id(self):
+        resp = yield self.post('/requests/', {
+            'intervals': [30, 90],
+            'request': {
+                'url': 'http://www.example.org',
+                'method': 'GET',
+            }
+        })
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual((yield resp.content()), json.dumps({
+            'errors': [{
+                'type': 'header_missing',
+                'message': "Header 'X-Owner-ID' is missing"
+            }]
+        }))
