@@ -249,22 +249,3 @@ class TestRetrySenderWorker(TestCase):
         self.assertEqual(req, popped_req)
         self.assertEqual(pops, [])
         self.assertTrue(worker.stopped)
-
-    @inlineCallbacks
-    def test_stop_after_pop_empty(self):
-        """
-        If the loop was stopped, but we've already asked redis for the next
-        request, we shouldn't reschedule the loop if we find out the ready set
-        is empty.
-        """
-        self.patch_retry()
-        pops = self.patch_next_req()
-        worker = yield self.mk_worker({'frequency': 5})
-
-        self.assertTrue(worker.started)
-        worker.stop()
-        self.assertTrue(worker.stopping)
-
-        pops.pop().callback(None)
-        self.assertEqual(pops, [])
-        self.assertTrue(worker.stopped)
