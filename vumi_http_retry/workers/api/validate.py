@@ -15,7 +15,7 @@ def validate(*validators):
             errors = []
 
             for v in validators:
-                errors.extend(v(req) or [])
+                errors.extend(v(req, *a, **kw) or [])
 
             if not errors:
                 return fn(api, req, *a, **kw)
@@ -43,9 +43,7 @@ def has_header(name):
 def body_schema(schema):
     json_validator = Draft4Validator(schema)
 
-    def validator(req):
-        body = json.loads(req.content.read())
-
+    def validator(req, body):
         return [{
             'type': 'invalid_body',
             'message': e.message

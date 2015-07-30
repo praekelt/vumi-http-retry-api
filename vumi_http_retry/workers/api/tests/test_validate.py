@@ -8,6 +8,7 @@ import treq
 from klein import Klein
 
 from vumi_http_retry.tests.utils import ToyServer
+from vumi_http_retry.workers.api.utils import json_body
 from vumi_http_retry.workers.api.validate import (
     validate, has_header, body_schema)
 
@@ -93,8 +94,9 @@ class TestValidate(TestCase):
             app = Klein()
 
             @app.route('/')
+            @json_body
             @validate(body_schema({'properties': {'foo': {'type': 'string'}}}))
-            def route(self, req):
+            def route(self, req, body):
                 pass
 
         srv = yield ToyServer.from_test(self, Api().app)
