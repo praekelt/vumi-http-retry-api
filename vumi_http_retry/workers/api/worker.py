@@ -1,7 +1,6 @@
 import json
 import time
 
-from twisted.web import http
 from twisted.internet import reactor, protocol
 from twisted.internet.defer import inlineCallbacks, returnValue
 
@@ -12,6 +11,7 @@ from txredis.client import RedisClient
 
 from vumi_http_retry.worker import BaseWorker
 from vumi_http_retry.retries import add_pending
+from vumi_http_retry.workers.api.utils import response
 
 
 class RetryApiConfig(Config):
@@ -42,17 +42,9 @@ class RetryApiWorker(BaseWorker):
     def teardown(self):
         self.redis.transport.loseConnection()
 
-    @classmethod
-    def respond(cls, req, data, code=http.OK):
-        req.responseHeaders.setRawHeaders(
-            'Content-Type', ['application/json'])
-
-        req.setResponseCode(code)
-        return json.dumps(data)
-
     @app.route('/health', methods=['GET'])
     def route_health(self, req):
-        return self.respond(req, {})
+        return response(req, {})
 
     @app.route('/requests/', methods=['POST'])
     @inlineCallbacks
@@ -68,4 +60,4 @@ class RetryApiWorker(BaseWorker):
             'intervals': data['intervals']
         })
 
-        returnValue(self.respond(req, {}))
+        returnValue(response(req, {}))
