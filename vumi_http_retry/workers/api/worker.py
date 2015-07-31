@@ -52,15 +52,28 @@ class RetryApiWorker(BaseWorker):
     @validate(
         has_header('X-Owner-ID'),
         body_schema({
+            'type': 'object',
             'properties': {
-                'intervals': {'type': 'array'},
+                'intervals': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'integer',
+                        'minimum': 0
+                    }
+                },
                 'request': {
                     'type': 'object',
                     'properties': {
                         'url': {'type': 'string'},
                         'method': {'type': 'string'},
                         'body': {'type': 'string'},
-                        'headers': {'type': 'object'}
+                        'headers': {
+                            'type': 'object',
+                            'additionalProperties': {
+                                'type': 'array',
+                                'items': {'type': 'string'}
+                            }
+                        }
                     }
                 }
             }
