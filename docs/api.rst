@@ -77,7 +77,9 @@ API Methods
 
    :resheader Content-Type: ``application/json``.
 
-   *Note*: A maximum of ``10000`` request retries are allowed per owner per 30 minutes. If this is exceeded, the api will send a ``429`` error response. See :ref:`example below <too-many-requests-response-example>`.
+   *Note*: A maximum of ``10000`` unfinished request retries are allowed per
+   owner. If this is exceeded, the api will send a ``429`` error response. See
+   :ref:`example below <too-many-requests-response-example>`.
 
    **Example request**:
 
@@ -121,6 +123,6 @@ API Methods
        {
            "errors": [{
                "type": "too_many_requests",
-               "message": "Only 10000 requests are allowed per owner per 30 minutes"
+               "message": "Only 10000 unfinished requests are allowed per owner"
            }]
        }
