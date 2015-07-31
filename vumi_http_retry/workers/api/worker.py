@@ -1,7 +1,5 @@
-import json
 import time
 
-from twisted.web import http
 from twisted.internet import reactor, protocol
 from twisted.internet.defer import inlineCallbacks, returnValue
 
@@ -12,6 +10,9 @@ from txredis.client import RedisClient
 
 from vumi_http_retry.worker import BaseWorker
 from vumi_http_retry.retries import add_pending
+from vumi_http_retry.workers.api.utils import response, json_body
+from vumi_http_retry.workers.api.validate import (
+    validate, has_header, body_schema)
 
 
 class RetryApiConfig(Config):
@@ -42,30 +43,48 @@ class RetryApiWorker(BaseWorker):
     def teardown(self):
         self.redis.transport.loseConnection()
 
-    @classmethod
-    def respond(cls, req, data, code=http.OK):
-        req.responseHeaders.setRawHeaders(
-            'Content-Type', ['application/json'])
-
-        req.setResponseCode(code)
-        return json.dumps(data)
-
     @app.route('/health', methods=['GET'])
     def route_health(self, req):
-        return self.respond(req, {})
+        return response(req, {})
 
     @app.route('/requests/', methods=['POST'])
+    @json_body
+    @validate(
+        has_header('X-Owner-ID'),
+        body_schema({
+            'type': 'object',
+            'properties': {
+                'intervals': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'integer',
+                        'minimum': 0
+                    }
+                },
+                'request': {
+                    'type': 'object',
+                    'properties': {
+                        'url': {'type': 'string'},
+                        'method': {'type': 'string'},
+                        'body': {'type': 'string'},
+                        'headers': {
+                            'type': 'object',
+                            'additionalProperties': {
+                                'type': 'array',
+                                'items': {'type': 'string'}
+                            }
+                        }
+                    }
+                }
+            }
+        }))
     @inlineCallbacks
-    def route_requests(self, req):
-        # TODO validation
-        # TODO rate limiting
-        data = json.loads(req.content.read())
-
+    def route_requests(self, req, body):
         yield add_pending(self.redis, self.config.redis_prefix, {
             'owner_id': req.getHeader('x-owner-id'),
             'timestamp': time.time(),
-            'request': data['request'],
-            'intervals': data['intervals']
+            'request': body['request'],
+            'intervals': body['intervals']
         })
 
-        returnValue(self.respond(req, {}))
+        returnValue(response(req, {}))

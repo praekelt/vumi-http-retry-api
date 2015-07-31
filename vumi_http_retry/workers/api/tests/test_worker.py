@@ -81,3 +81,103 @@ class TestRetryApiWorker(TestCase):
                 }
             }),
         ])
+
+    @inlineCallbacks
+    def test_requests_no_owner_id(self):
+        resp = yield self.post('/requests/', {
+            'intervals': [30, 90],
+            'request': {
+                'url': 'http://www.example.org',
+                'method': 'GET',
+            }
+        })
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'type': 'header_missing',
+                'message': "Header 'X-Owner-ID' is missing"
+            }]
+        })
+
+    @inlineCallbacks
+    def test_requests_bad_body(self):
+        resp = yield self.post(
+            '/requests/',
+            'foo',
+            headers={'X-Owner-ID': '1234'})
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'message': "u'foo' is not of type 'object'",
+                'type': 'invalid_body'
+            }]
+        })
+
+        resp = yield self.post('/requests/', {
+            'intervals': 'foo',
+            'request': {
+                'url': 23,
+                'method': 'GET',
+                'headers': 'bar'
+            }
+        }, headers={'X-Owner-ID': '1234'})
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'message': "u'foo' is not of type 'array'",
+                'type': 'invalid_body'
+            }, {
+                'message': "23 is not of type 'string'",
+                'type': 'invalid_body'
+            }, {
+                'message': "u'bar' is not of type 'object'",
+                'type': 'invalid_body'
+            }]
+        })
+
+        resp = yield self.post('/requests/', {
+            'intervals': 'foo',
+            'request': {
+                'url': 'www.example.com',
+                'method': 'GET',
+                'headers': {
+                    'foo': 'bar'
+                }
+            }
+        }, headers={'X-Owner-ID': '1234'})
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'message': u"u'foo' is not of type 'array'",
+                'type': "invalid_body"
+            }, {
+                'message': u"u'bar' is not of type 'array'",
+                'type': "invalid_body"
+            }]
+        })
+
+        resp = yield self.post('/requests/', {
+            'intervals': 'foo',
+            'request': {
+                'url': 'www.example.com',
+                'method': 'GET',
+                'headers': {
+                    'foo': [23]
+                }
+            }
+        }, headers={'X-Owner-ID': '1234'})
+
+        self.assertEqual(resp.code, http.BAD_REQUEST)
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'message': u"u'foo' is not of type 'array'",
+                'type': "invalid_body"
+            }, {
+                'message': u"23 is not of type 'string'",
+                'type': "invalid_body"
+            }]
+        })
