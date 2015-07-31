@@ -9,7 +9,8 @@ from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.workers.api.worker import RetryApiWorker
-from vumi_http_retry.retries import pending_key
+from vumi_http_retry.retries import (
+    pending_key, get_req_count, set_req_count)
 from vumi_http_retry.tests.redis import zitems, delete
 
 
@@ -27,7 +28,10 @@ class TestRetryApiWorker(TestCase):
 
     @inlineCallbacks
     def start_server(self):
-        self.app = RetryApiWorker({'redis_prefix': 'test'})
+        self.app = RetryApiWorker({
+            'redis_prefix': 'test',
+            'request_limit': 10000,
+        })
         yield self.app.setup()
         self.server = yield reactor.listenTCP(0, Site(self.app.app.resource()))
         addr = self.server.getHost()
@@ -58,6 +62,9 @@ class TestRetryApiWorker(TestCase):
     def test_requests(self):
         k = pending_key('test')
 
+        self.assertEqual(
+            (yield get_req_count(self.app.redis, 'test', '1234')), 0)
+
         resp = yield self.post('/requests/', {
             'intervals': [30, 90],
             'request': {
@@ -68,6 +75,9 @@ class TestRetryApiWorker(TestCase):
 
         self.assertEqual(resp.code, http.OK)
         self.assertEqual((yield resp.content()), json.dumps({}))
+
+        self.assertEqual(
+            (yield get_req_count(self.app.redis, 'test', '1234')), 1)
 
         self.assertEqual((yield zitems(self.app.redis, k)), [
             (self.time + 30, {
@@ -81,6 +91,27 @@ class TestRetryApiWorker(TestCase):
                 }
             }),
         ])
+
+    @inlineCallbacks
+    def test_requests_limit_reached(self):
+        yield set_req_count(self.app.redis, 'test', '1234', 10000)
+
+        resp = yield self.post('/requests/', {
+            'intervals': [30, 90],
+            'request': {
+                'url': 'http://www.example.org',
+                'method': 'GET',
+            }
+        }, headers={'X-Owner-ID': '1234'})
+
+        self.assertEqual(resp.code, 419)
+        self.assertEqual(json.loads((yield resp.content())), {
+            'errors': [{
+                'type': 'too_many_requests',
+                'message': "Only 10000 unfinished requests are "
+                           "allowed per owner"
+            }]
+        })
 
     @inlineCallbacks
     def test_requests_no_owner_id(self):
