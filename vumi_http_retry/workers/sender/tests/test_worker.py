@@ -4,7 +4,8 @@ from twisted.internet.defer import (
     inlineCallbacks, returnValue, DeferredQueue, Deferred)
 
 from vumi_http_retry.workers.sender.worker import RetrySenderWorker
-from vumi_http_retry.retries import pending_key, ready_key, add_ready
+from vumi_http_retry.retries import (
+    set_req_count, get_req_count, pending_key, ready_key, add_ready)
 from vumi_http_retry.tests.redis import zitems, lvalues, delete
 from vumi_http_retry.tests.utils import ToyServer
 
@@ -162,6 +163,81 @@ class TestRetrySenderWorker(TestCase):
         })
 
         self.assertEqual((yield zitems(worker.redis, pending_key('test'))), [])
+
+    @inlineCallbacks
+    def test_retry_dec_req_count_success(self):
+        worker = yield self.mk_worker()
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/')
+        def route(req):
+            pass
+
+        yield set_req_count(worker.redis, 'test', '1234', 3)
+
+        yield worker.retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 1,
+            'intervals': [10, 20],
+            'request': {
+                'url': srv.url,
+                'method': 'GET'
+            }
+        })
+
+        self.assertEqual(
+            (yield get_req_count(worker.redis, 'test', '1234')), 2)
+
+    @inlineCallbacks
+    def test_retry_dec_req_count_no_reattempt(self):
+        worker = yield self.mk_worker()
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/')
+        def route(req):
+            pass
+
+        yield set_req_count(worker.redis, 'test', '1234', 3)
+
+        yield worker.retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 1,
+            'intervals': [10, 20],
+            'request': {
+                'url': srv.url,
+                'method': 'GET'
+            }
+        })
+
+        self.assertEqual(
+            (yield get_req_count(worker.redis, 'test', '1234')), 2)
+
+    @inlineCallbacks
+    def test_retry_no_dec_req_count_on_reattempt(self):
+        worker = yield self.mk_worker()
+        srv = yield ToyServer.from_test(self)
+
+        @srv.app.route('/')
+        def route(req):
+            req.setResponseCode(500)
+
+        yield set_req_count(worker.redis, 'test', '1234', 3)
+
+        yield worker.retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10, 20],
+            'request': {
+                'url': srv.url,
+                'method': 'GET'
+            }
+        })
+
+        self.assertEqual(
+            (yield get_req_count(worker.redis, 'test', '1234')), 3)
 
     @inlineCallbacks
     def test_loop(self):

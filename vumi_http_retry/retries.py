@@ -13,6 +13,28 @@ def ready_key(prefix):
     return '.'.join((prefix, 'working_set'))
 
 
+def req_count_key(prefix, owner_id):
+    return '.'.join((prefix, 'request_count', owner_id))
+
+
+def inc_req_count(redis, prefix, owner_id):
+    return redis.incr(req_count_key(prefix, owner_id))
+
+
+def dec_req_count(redis, prefix, owner_id):
+    return redis.decr(req_count_key(prefix, owner_id))
+
+
+def set_req_count(redis, prefix, owner_id, value):
+    return redis.set(req_count_key(prefix, owner_id), value)
+
+
+@inlineCallbacks
+def get_req_count(redis, prefix, owner_id):
+    v = yield redis.get(req_count_key(prefix, owner_id))
+    returnValue(int(v) if v is not None else 0)
+
+
 def next_score(req):
     dt = req['intervals'][req['attempts']]
     return req['timestamp'] + dt

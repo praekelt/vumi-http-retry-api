@@ -4,7 +4,8 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.retries import (
-    pending_key, ready_key, add_pending, pop_pending,
+    pending_key, ready_key, inc_req_count, dec_req_count,
+    get_req_count, set_req_count, add_pending, pop_pending,
     add_ready, pop_ready, retry, should_retry, can_reattempt)
 from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
@@ -19,6 +20,19 @@ class TestRetries(TestCase):
     def tearDown(self):
         yield delete(self.redis, "test.*")
         self.redis.transport.loseConnection()
+
+    @inlineCallbacks
+    def test_req_count(self):
+        self.assertEqual((yield get_req_count(self.redis, 'test', '1234')), 0)
+
+        yield inc_req_count(self.redis, 'test', '1234')
+        self.assertEqual((yield get_req_count(self.redis, 'test', '1234')), 1)
+
+        yield dec_req_count(self.redis, 'test', '1234')
+        self.assertEqual((yield get_req_count(self.redis, 'test', '1234')), 0)
+
+        yield set_req_count(self.redis, 'test', '1234', 3)
+        self.assertEqual((yield get_req_count(self.redis, 'test', '1234')), 3)
 
     @inlineCallbacks
     def test_add_pending(self):
