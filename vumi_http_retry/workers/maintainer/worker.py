@@ -16,7 +16,8 @@ class RetryMaintainerConfig(Config):
         "How often the ready set should be updated (in seconds)",
         default=60)
     pop_chunk_size = ConfigInt(
-        "The maximum number of pending requests to pop each call to redis")
+        "The maximum number of pending requests to pop each call to redis",
+        default=500)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
         default='vumi_http_retry')
