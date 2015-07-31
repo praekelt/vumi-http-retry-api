@@ -9,7 +9,7 @@ from confmodel.fields import ConfigText, ConfigInt, ConfigDict
 
 from vumi_http_retry.worker import BaseWorker
 from vumi_http_retry.retries import (
-    pop_ready, retry, should_retry, can_reattempt, add_pending)
+    dec_req_count, pop_ready, retry, should_retry, can_reattempt, add_pending)
 
 
 class RetrySenderConfig(Config):
@@ -47,6 +47,8 @@ class RetrySenderWorker(BaseWorker):
 
     @inlineCallbacks
     def setup(self, clock=None):
+        self.prefix = self.config.redis_prefix
+
         if clock is None:
             clock = reactor
 
@@ -73,14 +75,16 @@ class RetrySenderWorker(BaseWorker):
         self.redis.transport.loseConnection()
 
     def next_req(self):
-        return pop_ready(self.redis, self.config.redis_prefix)
+        return pop_ready(self.redis, self.prefix)
 
     @inlineCallbacks
     def retry(self, req):
         resp = yield retry(req, **self.config.overrides)
 
         if should_retry(resp) and can_reattempt(req):
-            yield add_pending(self.redis, self.config.redis_prefix, req)
+            yield add_pending(self.redis, self.prefix, req)
+        else:
+            yield dec_req_count(self.redis, self.prefix, req['owner_id'])
 
     @inlineCallbacks
     def poll(self):
