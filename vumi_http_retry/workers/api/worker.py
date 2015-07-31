@@ -99,7 +99,7 @@ class RetryApiWorker(BaseWorker):
                     'message': "Only 10000 unfinished requests are "
                                "allowed per owner"
                 }]
-            }, code=419))
+            }, code=429))
         else:
             yield add_pending(self.redis, self.prefix, {
                 'owner_id': req.getHeader('x-owner-id'),
