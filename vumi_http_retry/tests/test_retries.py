@@ -21,6 +21,17 @@ class TestRetries(TestCase):
         yield delete(self.redis, "test.*")
         self.redis.transport.loseConnection()
 
+    def redis_spy(self, name):
+        calls = []
+        fn = getattr(self.redis, name)
+
+        def wrapper(*a, **kw):
+            calls.append((a, kw))
+            return fn(*a, **kw)
+
+        self.patch(self.redis, name, wrapper)
+        return calls
+
     @inlineCallbacks
     def test_req_count(self):
         self.assertEqual((yield get_req_count(self.redis, 'test', '1234')), 0)
@@ -158,6 +169,36 @@ class TestRetries(TestCase):
         result = yield pop_pending(self.redis, 'test', 0, 50)
         self.assertEqual(result, pending_reqs[2:3] + pending_reqs[5:])
         self.assertEqual((yield zitems(self.redis, k)), [])
+
+    @inlineCallbacks
+    def test_pop_pending_chunks(self):
+        calls = self.redis_spy('zrangebyscore')
+
+        k = pending_key('test')
+
+        for t in range(5, 40, 5):
+            yield add_pending(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        pending = yield zitems(self.redis, k)
+        pending_reqs = [r for t, r in pending]
+
+        calls
+        result = yield pop_pending(self.redis, 'test', 0, 50, chunk_size=3)
+        self.assertEqual(result, pending_reqs)
+        self.assertEqual((yield zitems(self.redis, k)), [])
+
+        self.assertEqual(calls, 4 * [
+            ((k, 0, 50), {
+                'offset': 0,
+                'count': 3
+            }),
+        ])
 
     @inlineCallbacks
     def test_add_ready(self):

@@ -53,12 +53,32 @@ def add_pending(redis, prefix, req):
 
 
 @inlineCallbacks
-def pop_pending(redis, prefix, from_time, to_time):
+def limit_pop_pending(redis, prefix, from_time, to_time, limit):
     k = pending_key(prefix)
-    reqs = yield redis.zrangebyscore(k, from_time, to_time)
+
+    reqs = yield redis.zrangebyscore(
+        k, from_time, to_time, offset=0, count=limit)
+
     if reqs:
         yield redis.zrem(k, *reqs)
+
     returnValue([json.loads(r) for r in reqs])
+
+
+@inlineCallbacks
+def pop_pending(redis, prefix, from_time, to_time, chunk_size=500):
+    results = []
+
+    while True:
+        reqs = yield limit_pop_pending(
+            redis, prefix, from_time, to_time, chunk_size)
+
+        if not reqs:
+            break
+
+        results.extend(reqs)
+
+    returnValue(results)
 
 
 @inlineCallbacks
