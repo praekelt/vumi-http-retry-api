@@ -1,6 +1,7 @@
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import inlineCallbacks, returnValue, succeed
+from twisted.internet.defer import (
+    Deferred, inlineCallbacks, returnValue, succeed)
 
 from vumi_http_retry.workers.maintainer.worker import RetryMaintainerWorker
 from vumi_http_retry.retries import pending_key, ready_key, add_pending
@@ -45,7 +46,7 @@ class TestRetryMaintainerWorker(TestCase):
             'frequency': 20,
         })
 
-        worker.stop_maintain_loop()
+        worker.stop()
 
         for t in range(5, 25, 5):
             yield add_pending(worker.redis, 'test', {
@@ -88,7 +89,7 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertEqual((yield zitems(worker.redis, k_p)), [])
 
     @inlineCallbacks
-    def test_maintain_loop(self):
+    def test_loop(self):
         k_p = pending_key('test')
         k_r = ready_key('test')
 
@@ -143,6 +144,22 @@ class TestRetryMaintainerWorker(TestCase):
 
         self.assertEqual(worker.maintains, [])
 
-        worker.stop_maintain_loop()
+        worker.stop()
         worker.clock.advance(5)
         self.assertEqual(worker.maintains, [])
+
+    @inlineCallbacks
+    def test_stopping(self):
+        """
+        If a stop happens in the middle of a maintain, it should finish the
+        maintain before stopping
+        """
+        worker = yield self.mk_worker({
+            'redis_prefix': 'test',
+            'frequency': 5,
+        })
+
+        worker.stop()
+        self.assertTrue(worker.stopping)
+        yield worker.maintains.pop()
+        self.assertTrue(worker.stopped)
