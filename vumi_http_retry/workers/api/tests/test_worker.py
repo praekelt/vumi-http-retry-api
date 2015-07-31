@@ -104,7 +104,7 @@ class TestRetryApiWorker(TestCase):
             }
         }, headers={'X-Owner-ID': '1234'})
 
-        self.assertEqual(resp.code, 419)
+        self.assertEqual(resp.code, 429)
         self.assertEqual(json.loads((yield resp.content())), {
             'errors': [{
                 'type': 'too_many_requests',
