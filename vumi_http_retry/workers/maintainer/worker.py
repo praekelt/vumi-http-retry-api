@@ -8,13 +8,16 @@ from confmodel import Config
 from confmodel.fields import ConfigText, ConfigInt
 
 from vumi_http_retry.worker import BaseWorker
-from vumi_http_retry.retries import pop_pending, add_ready
+from vumi_http_retry.retries import pop_pending_add_ready
 
 
 class RetryMaintainerConfig(Config):
     frequency = ConfigInt(
         "How often the ready set should be updated (in seconds)",
         default=60)
+    pop_chunk_size = ConfigInt(
+        "The maximum number of pending requests to pop each call to redis",
+        default=500)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
         default='vumi_http_retry')
@@ -68,9 +71,12 @@ class RetryMaintainerWorker(BaseWorker):
 
     @inlineCallbacks
     def maintain(self):
-        prefix = self.config.redis_prefix
-        reqs = yield pop_pending(self.redis, prefix, 0, self.clock.seconds())
-        yield add_ready(self.redis, prefix, reqs)
+        yield pop_pending_add_ready(
+            self.redis,
+            self.config.redis_prefix,
+            from_time=0,
+            to_time=self.clock.seconds(),
+            chunk_size=self.config.pop_chunk_size)
 
     def start(self):
         self.loop_d = self.loop.start(self.config.frequency, now=True)
