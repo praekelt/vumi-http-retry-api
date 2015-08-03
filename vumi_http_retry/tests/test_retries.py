@@ -1,3 +1,4 @@
+import json
 import treq
 
 from twisted.trial.unittest import TestCase
@@ -6,7 +7,8 @@ from twisted.internet.defer import inlineCallbacks
 from vumi_http_retry.retries import (
     pending_key, ready_key, inc_req_count, dec_req_count,
     get_req_count, set_req_count, add_pending, pop_pending,
-    add_ready, pop_ready, retry, should_retry, can_reattempt)
+    add_ready, pop_pending_add_ready, pop_ready, retry, should_retry,
+    can_reattempt)
 from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
 
@@ -171,9 +173,7 @@ class TestRetries(TestCase):
         self.assertEqual((yield zitems(self.redis, k)), [])
 
     @inlineCallbacks
-    def test_pop_pending_chunks(self):
-        calls = self.redis_spy('zrangebyscore')
-
+    def test_pop_pending_limit(self):
         k = pending_key('test')
 
         for t in range(5, 40, 5):
@@ -188,17 +188,42 @@ class TestRetries(TestCase):
         pending = yield zitems(self.redis, k)
         pending_reqs = [r for t, r in pending]
 
-        calls
-        result = yield pop_pending(self.redis, 'test', 0, 50, chunk_size=3)
-        self.assertEqual(result, pending_reqs)
+        result = yield pop_pending(self.redis, 'test', 0, 50, limit=2)
+        self.assertEqual(result, pending_reqs[:2])
+        self.assertEqual((yield zitems(self.redis, k)), pending[2:])
+
+        result = yield pop_pending(self.redis, 'test', 0, 50, limit=3)
+        self.assertEqual(result, pending_reqs[2:5])
+        self.assertEqual((yield zitems(self.redis, k)), pending[5:])
+
+        result = yield pop_pending(self.redis, 'test', 0, 50, limit=3)
+        self.assertEqual(result, pending_reqs[5:])
         self.assertEqual((yield zitems(self.redis, k)), [])
 
-        self.assertEqual(calls, 4 * [
-            ((k, 0, 50), {
-                'offset': 0,
-                'count': 3
-            }),
-        ])
+        result = yield pop_pending(self.redis, 'test', 0, 50, limit=3)
+        self.assertEqual(result, [])
+        self.assertEqual((yield zitems(self.redis, k)), [])
+
+    @inlineCallbacks
+    def test_pop_pending_no_deserialize(self):
+        k = pending_key('test')
+
+        for t in range(5, 35, 5):
+            yield add_pending(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        pending = yield zitems(self.redis, k)
+        pending_reqs = [r for t, r in pending]
+
+        result = yield pop_pending(
+            self.redis, 'test', 0, 10 + 13, deserialize=False)
+
+        self.assertEqual([json.loads(r) for r in result], pending_reqs[:2])
 
     @inlineCallbacks
     def test_add_ready(self):
@@ -241,6 +266,78 @@ class TestRetries(TestCase):
         yield add_ready(self.redis, 'test', [req2, req3])
 
         self.assertEqual((yield lvalues(self.redis, k)), [req1, req2, req3])
+
+    @inlineCallbacks
+    def test_add_ready_no_serialize(self):
+        k = ready_key('test')
+
+        req1 = {
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'foo': 23}
+        }
+
+        req2 = {
+            'owner_id': '1234',
+            'timestamp': 10,
+            'attempts': 0,
+            'intervals': [10],
+            'request': {'bar': 42}
+        }
+
+        yield add_ready(
+            self.redis, 'test', [json.dumps(req1), json.dumps(req2)],
+            serialize=False)
+
+        self.assertEqual((yield lvalues(self.redis, k)), [req1, req2])
+
+    @inlineCallbacks
+    def test_pop_pending_add_ready(self):
+        calls = self.redis_spy('zrangebyscore')
+
+        k = pending_key('test')
+
+        for t in range(5, 40, 5):
+            yield add_pending(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        yield pop_pending_add_ready(
+            self.redis, 'test', 0, 50, chunk_size=3)
+
+        self.assertEqual(calls, 4 * [
+            ((k, 0, 50), {
+                'offset': 0,
+                'count': 3
+            }),
+        ])
+
+    @inlineCallbacks
+    def test_pop_pending_add_ready_chunks(self):
+        k_p = pending_key('test')
+        k_r = ready_key('test')
+
+        for t in range(5, 40, 5):
+            yield add_pending(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        pending_reqs = [r for t, r in (yield zitems(self.redis, k_p))]
+
+        yield pop_pending_add_ready(self.redis, 'test', 0, 50)
+
+        self.assertEqual((yield lvalues(self.redis, k_r)), pending_reqs)
+        self.assertEqual((yield zitems(self.redis, k_p)), [])
 
     @inlineCallbacks
     def test_pop_ready(self):

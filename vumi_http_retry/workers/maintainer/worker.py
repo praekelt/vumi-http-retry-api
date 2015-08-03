@@ -8,7 +8,7 @@ from confmodel import Config
 from confmodel.fields import ConfigText, ConfigInt
 
 from vumi_http_retry.worker import BaseWorker
-from vumi_http_retry.retries import pop_pending, add_ready
+from vumi_http_retry.retries import pop_pending_add_ready
 
 
 class RetryMaintainerConfig(Config):
@@ -71,14 +71,12 @@ class RetryMaintainerWorker(BaseWorker):
 
     @inlineCallbacks
     def maintain(self):
-        reqs = yield pop_pending(
+        yield pop_pending_add_ready(
             self.redis,
             self.config.redis_prefix,
             from_time=0,
             to_time=self.clock.seconds(),
             chunk_size=self.config.pop_chunk_size)
-
-        yield add_ready(self.redis, self.config.redis_prefix, reqs)
 
     def start(self):
         self.loop_d = self.loop.start(self.config.frequency, now=True)
