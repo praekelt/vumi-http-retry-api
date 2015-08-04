@@ -418,7 +418,7 @@ class TestRetries(TestCase):
             'request': {
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST',
-                'data': 'hi'
+                'body': 'hi'
             }
         }, persistent=False)
 

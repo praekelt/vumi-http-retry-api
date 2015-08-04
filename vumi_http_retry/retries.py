@@ -104,7 +104,7 @@ def retry(req, **overrides):
     opts = {
         'method': d['method'],
         'url': d['url'],
-        'data': d.get('data'),
+        'data': d.get('body'),
         'headers': d.get('headers')
     }
 
