@@ -9,7 +9,7 @@ setup(
     long_description=open('README.rst', 'r').read(),
     author='Praekelt Foundation',
     author_email='dev@praekeltfoundation.org',
-    packages=find_packages(),
+    packages=find_packages() + ['twisted.plugins'],
     include_package_data=True,
     install_requires=[
         'klein',
