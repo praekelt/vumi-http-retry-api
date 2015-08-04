@@ -1,7 +1,6 @@
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import (
-    Deferred, inlineCallbacks, returnValue, succeed)
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from vumi_http_retry.workers.maintainer.worker import RetryMaintainerWorker
 from vumi_http_retry.retries import pending_key, ready_key, add_pending
@@ -163,3 +162,14 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertTrue(worker.stopping)
         yield worker.maintains.pop()
         self.assertTrue(worker.stopped)
+
+    @inlineCallbacks
+    def test_config_redis_db(self):
+        worker = yield self.mk_worker({
+            'redis_prefix': 'test',
+            'redis_db': 1
+        })
+
+        yield worker.redis.set('test.foo', 'bar')
+        yield worker.redis.select(1)
+        self.assertEqual((yield worker.redis.get('test.foo')), 'bar')

@@ -1,6 +1,7 @@
 import time
 
-from twisted.internet import reactor, protocol
+from twisted.internet import reactor
+from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 from klein import Klein
@@ -29,6 +30,9 @@ class RetryApiConfig(Config):
     redis_port = ConfigInt(
         "Redis client port",
         default=6379)
+    redis_db = ConfigInt(
+        "Redis database number",
+        default=0)
     request_limit = ConfigInt(
         "The maximum amount of unfinished requests allowed per owner",
         default=10000)
@@ -40,9 +44,12 @@ class RetryApiWorker(BaseWorker):
 
     @inlineCallbacks
     def setup(self):
-        clientCreator = protocol.ClientCreator(reactor, RedisClient)
-        self.redis = yield clientCreator.connectTCP(
+        redisCreator = ClientCreator(
+            reactor, RedisClient, db=self.config.redis_db)
+
+        self.redis = yield redisCreator.connectTCP(
             self.config.redis_host, self.config.redis_port)
+
         self.prefix = self.config.redis_prefix
 
     def teardown(self):
