@@ -6,7 +6,7 @@ from twisted.web import http
 from twisted.trial.unittest import TestCase
 from twisted.web.server import Site
 from twisted.internet import reactor
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from vumi_http_retry.workers.api.worker import RetryApiWorker
 from vumi_http_retry.retries import (
@@ -25,6 +25,16 @@ class TestRetryApiWorker(TestCase):
     def tearDown(self):
         yield delete(self.app.redis, 'test.*')
         yield self.stop_server()
+
+    @inlineCallbacks
+    def mk_worker(self, config):
+        config['redis_pefix'] = 'test'
+        worker = RetryApiWorker(config)
+
+        yield worker.setup()
+        self.addCleanup(worker.teardown)
+
+        returnValue(worker)
 
     @inlineCallbacks
     def start_server(self):
@@ -212,3 +222,14 @@ class TestRetryApiWorker(TestCase):
                 'type': "invalid_body"
             }]
         })
+
+    @inlineCallbacks
+    def test_config_redis_db(self):
+        worker = yield self.mk_worker({
+            'redis_prefix': 'test',
+            'redis_db': 1,
+        })
+
+        yield worker.redis.set('test.foo', 'bar')
+        yield worker.redis.select(1)
+        self.assertEqual((yield worker.redis.get('test.foo')), 'bar')

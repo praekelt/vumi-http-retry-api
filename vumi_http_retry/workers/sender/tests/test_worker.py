@@ -357,3 +357,14 @@ class TestRetrySenderWorker(TestCase):
         self.assertEqual(req, popped_req)
         self.assertEqual(pops, [])
         self.assertTrue(worker.stopped)
+
+    @inlineCallbacks
+    def test_config_redis_db(self):
+        worker = yield self.mk_worker({
+            'redis_prefix': 'test',
+            'redis_db': 1
+        })
+
+        yield worker.redis.set('test.foo', 'bar')
+        yield worker.redis.select(1)
+        self.assertEqual((yield worker.redis.get('test.foo')), 'bar')

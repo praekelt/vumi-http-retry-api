@@ -27,6 +27,9 @@ class RetryMaintainerConfig(Config):
     redis_port = ConfigInt(
         "Redis client port",
         default=6379)
+    redis_db = ConfigInt(
+        "Redis database number",
+        default=0)
 
 
 class RetryMaintainerWorker(BaseWorker):
@@ -51,7 +54,8 @@ class RetryMaintainerWorker(BaseWorker):
 
         self.clock = clock
 
-        redisCreator = ClientCreator(reactor, RedisClient)
+        redisCreator = ClientCreator(
+            reactor, RedisClient, db=self.config.redis_db)
 
         self.redis = yield redisCreator.connectTCP(
             self.config.redis_host,
