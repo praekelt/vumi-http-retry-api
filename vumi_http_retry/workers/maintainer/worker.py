@@ -82,9 +82,13 @@ class RetryMaintainerWorker(BaseWorker):
             to_time=self.clock.seconds(),
             chunk_size=self.config.pop_chunk_size)
 
+    def on_error(self, err):
+        log.err(err)
+
     def start(self):
-        self.loop_d = self.loop.start(self.config.frequency, now=True)
         self.state = 'started'
+        self.loop_d = self.loop.start(self.config.frequency, now=True)
+        self.loop_d.addErrback(self.on_error)
 
     @inlineCallbacks
     def stop(self):

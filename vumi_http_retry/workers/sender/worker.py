@@ -1,3 +1,4 @@
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.internet.protocol import ClientCreator
@@ -103,9 +104,13 @@ class RetrySenderWorker(BaseWorker):
 
             yield self.retry(req)
 
+    def on_error(self, err):
+        log.err(err)
+
     def start(self):
         self.state = 'started'
         self.loop_d = self.loop.start(self.config.frequency, now=True)
+        self.loop_d.addErrback(self.on_error)
 
     @inlineCallbacks
     def stop(self):

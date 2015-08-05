@@ -25,6 +25,19 @@ class TestRetryMaintainerWorker(TestCase):
         yield delete(worker.redis, 'test.*')
         yield worker.teardown()
 
+    def patch_on_error(self):
+        errors = []
+
+        def on_error(f):
+            errors.append(f.value)
+
+        fn = staticmethod(on_error)
+        self.patch(ToyRetryMaintainerWorker, 'on_error', fn)
+        return errors
+
+    def patch_maintain(self, fn):
+        self.patch(ToyRetryMaintainerWorker, 'maintain', fn)
+
     @inlineCallbacks
     def mk_worker(self, config):
         config['redis_pefix'] = 'test'
@@ -146,6 +159,25 @@ class TestRetryMaintainerWorker(TestCase):
         worker.stop()
         worker.clock.advance(5)
         self.assertEqual(worker.maintains, [])
+
+    @inlineCallbacks
+    def test_loop_error(self):
+        e = Exception(':/')
+
+        def bad_maintain():
+            raise e
+
+        errors = self.patch_on_error()
+        self.patch_maintain(staticmethod(bad_maintain))
+        worker = yield self.mk_worker({'frequency': 5})
+
+        self.assertEqual(errors, [e])
+
+        worker.clock.advance(5)
+        self.assertEqual(errors, [e])
+
+        worker.clock.advance(5)
+        self.assertEqual(errors, [e])
 
     @inlineCallbacks
     def test_stopping(self):

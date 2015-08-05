@@ -1,3 +1,4 @@
+from twisted.python.failure import Failure
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import (
@@ -49,6 +50,18 @@ class TestRetrySenderWorker(TestCase):
 
         self.patch(RetrySenderWorker, 'next_req', staticmethod(pop))
         return pops
+
+    def patch_poll(self, fn):
+        self.patch(RetrySenderWorker, 'poll', fn)
+
+    def patch_on_error(self):
+        errors = []
+
+        def on_error(f):
+            errors.append(f.value)
+
+        self.patch(RetrySenderWorker, 'on_error', staticmethod(on_error))
+        return errors
 
     @inlineCallbacks
     def test_retry(self):
@@ -297,6 +310,25 @@ class TestRetrySenderWorker(TestCase):
         req = yield retries.get()
         self.assertEqual(req, reqs[1])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+    @inlineCallbacks
+    def test_loop_error(self):
+        e = Exception(':/')
+
+        def bad_poll():
+            raise e
+
+        errors = self.patch_on_error()
+        self.patch_poll(staticmethod(bad_poll))
+        worker = yield self.mk_worker({'frequency': 5})
+
+        self.assertEqual(errors, [e])
+
+        worker.clock.advance(5)
+        self.assertEqual(errors, [e])
+
+        worker.clock.advance(5)
+        self.assertEqual(errors, [e])
 
     @inlineCallbacks
     def test_stop_after_pop_non_empty(self):
