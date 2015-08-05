@@ -418,7 +418,7 @@ class TestRetries(TestCase):
             'request': {
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST',
-                'data': 'hi'
+                'body': 'hi'
             }
         }, persistent=False)
 
@@ -483,6 +483,41 @@ class TestRetries(TestCase):
 
         yield retry(req, persistent=False)
         self.assertEqual(req['attempts'], 3)
+
+    @inlineCallbacks
+    def test_retry_unicode(self):
+        srv = yield ToyServer.from_test(self)
+        reqs = []
+
+        @srv.app.route('/')
+        def route(req):
+            reqs.append({
+                'method': req.method,
+                'body': req.content.read(),
+                'headers': {
+                    'X-Bar': req.requestHeaders.getRawHeaders('X-Bar'),
+                }
+            })
+
+        yield retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10, 20, 30],
+            'request': {
+                'url': u"%s" % (srv.url,),
+                'method': u'POST',
+                'body': u'foo',
+                'headers': {u'X-Bar': [u'baz', u'quux']}
+            }
+        }, persistent=False)
+
+        [req] = reqs
+        self.assertEqual(req, {
+            'method': 'POST',
+            'body': 'foo',
+            'headers': {'X-Bar': ['baz', 'quux']}
+        })
 
     @inlineCallbacks
     def test_should_retry(self):
