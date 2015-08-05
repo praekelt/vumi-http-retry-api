@@ -102,10 +102,12 @@ def retry(req, **overrides):
     d = req['request']
 
     opts = {
-        'method': d['method'],
-        'url': d['url'],
-        'data': d.get('data'),
-        'headers': d.get('headers')
+        'method': encode(d['method']),
+        'url': encode(d['url']),
+        'data': encode(d.get('body')),
+        'headers': dict([
+            (encode(k), [encode(v) for v in values])
+            for k, values in d.get('headers', {}).iteritems()]),
     }
 
     opts.update(overrides)
@@ -118,3 +120,7 @@ def should_retry(resp):
 
 def can_reattempt(req):
     return req['attempts'] < len(req['intervals'])
+
+
+def encode(v, encoding='utf-8'):
+    return v.encode(encoding) if v is not None else v

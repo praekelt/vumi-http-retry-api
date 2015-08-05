@@ -1,3 +1,4 @@
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.internet.protocol import ClientCreator
@@ -25,6 +26,9 @@ class RetrySenderConfig(Config):
     redis_port = ConfigInt(
         "Redis client port",
         default=6379)
+    redis_db = ConfigInt(
+        "Redis database number",
+        default=0)
     overrides = ConfigDict(
         "Options to override for each request",
         default={})
@@ -54,7 +58,8 @@ class RetrySenderWorker(BaseWorker):
 
         self.clock = clock
 
-        redisCreator = ClientCreator(reactor, RedisClient)
+        redisCreator = ClientCreator(
+            reactor, RedisClient, db=self.config.redis_db)
 
         self.redis = yield redisCreator.connectTCP(
             self.config.redis_host,
@@ -99,9 +104,13 @@ class RetrySenderWorker(BaseWorker):
 
             yield self.retry(req)
 
+    def on_error(self, err):
+        log.err(err)
+
     def start(self):
         self.state = 'started'
         self.loop_d = self.loop.start(self.config.frequency, now=True)
+        self.loop_d.addErrback(self.on_error)
 
     @inlineCallbacks
     def stop(self):

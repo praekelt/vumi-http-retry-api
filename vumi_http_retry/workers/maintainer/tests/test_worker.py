@@ -1,7 +1,6 @@
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import (
-    Deferred, inlineCallbacks, returnValue, succeed)
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from vumi_http_retry.workers.maintainer.worker import RetryMaintainerWorker
 from vumi_http_retry.retries import pending_key, ready_key, add_pending
@@ -25,6 +24,19 @@ class TestRetryMaintainerWorker(TestCase):
     def teardown_worker(self, worker):
         yield delete(worker.redis, 'test.*')
         yield worker.teardown()
+
+    def patch_on_error(self):
+        errors = []
+
+        def on_error(f):
+            errors.append(f.value)
+
+        fn = staticmethod(on_error)
+        self.patch(ToyRetryMaintainerWorker, 'on_error', fn)
+        return errors
+
+    def patch_maintain(self, fn):
+        self.patch(ToyRetryMaintainerWorker, 'maintain', fn)
 
     @inlineCallbacks
     def mk_worker(self, config):
@@ -149,6 +161,25 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertEqual(worker.maintains, [])
 
     @inlineCallbacks
+    def test_loop_error(self):
+        e = Exception(':/')
+
+        def bad_maintain():
+            raise e
+
+        errors = self.patch_on_error()
+        self.patch_maintain(staticmethod(bad_maintain))
+        worker = yield self.mk_worker({'frequency': 5})
+
+        self.assertEqual(errors, [e])
+
+        worker.clock.advance(5)
+        self.assertEqual(errors, [e])
+
+        worker.clock.advance(5)
+        self.assertEqual(errors, [e])
+
+    @inlineCallbacks
     def test_stopping(self):
         """
         If a stop happens in the middle of a maintain, it should finish the
@@ -163,3 +194,14 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertTrue(worker.stopping)
         yield worker.maintains.pop()
         self.assertTrue(worker.stopped)
+
+    @inlineCallbacks
+    def test_config_redis_db(self):
+        worker = yield self.mk_worker({
+            'redis_prefix': 'test',
+            'redis_db': 1
+        })
+
+        yield worker.redis.set('test.foo', 'bar')
+        yield worker.redis.select(1)
+        self.assertEqual((yield worker.redis.get('test.foo')), 'bar')

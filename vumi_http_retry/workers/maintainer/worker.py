@@ -27,6 +27,9 @@ class RetryMaintainerConfig(Config):
     redis_port = ConfigInt(
         "Redis client port",
         default=6379)
+    redis_db = ConfigInt(
+        "Redis database number",
+        default=0)
 
 
 class RetryMaintainerWorker(BaseWorker):
@@ -51,7 +54,8 @@ class RetryMaintainerWorker(BaseWorker):
 
         self.clock = clock
 
-        redisCreator = ClientCreator(reactor, RedisClient)
+        redisCreator = ClientCreator(
+            reactor, RedisClient, db=self.config.redis_db)
 
         self.redis = yield redisCreator.connectTCP(
             self.config.redis_host,
@@ -78,9 +82,13 @@ class RetryMaintainerWorker(BaseWorker):
             to_time=self.clock.seconds(),
             chunk_size=self.config.pop_chunk_size)
 
+    def on_error(self, err):
+        log.err(err)
+
     def start(self):
-        self.loop_d = self.loop.start(self.config.frequency, now=True)
         self.state = 'started'
+        self.loop_d = self.loop.start(self.config.frequency, now=True)
+        self.loop_d.addErrback(self.on_error)
 
     @inlineCallbacks
     def stop(self):
