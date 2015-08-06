@@ -1,6 +1,4 @@
-from itertools import ifilterfalse
-
-from twisted.internet.defer import Deferred, succeed
+from twisted.internet.defer import Deferred
 
 
 class DeferredLimiterOverflow(Exception):
@@ -9,8 +7,8 @@ class DeferredLimiterOverflow(Exception):
 
 class DeferredLimiter(object):
     """
-    Keeps track of a limited list of pending deferreds, allowing one to wait for
-    a vacancy in the list when one of the deferreds is done.
+    Keeps track of a limited list of pending deferreds, allowing one to wait
+    for a vacancy in the list when one of the deferreds is done.
     """
     def __init__(self, limit, errback=None):
         self.limit = limit

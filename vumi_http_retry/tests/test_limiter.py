@@ -110,7 +110,7 @@ class TestDeferredLimiter(TestCase):
 
         limiter = DeferredLimiter(2, errback)
         d1 = limiter.add(Deferred())
-        d2 = limiter.add(Deferred())
+        limiter.add(Deferred())
 
         e1 = Exception()
         d1.errback(e1)
