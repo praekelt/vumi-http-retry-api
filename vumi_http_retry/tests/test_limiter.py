@@ -80,6 +80,12 @@ class TestDeferredLimiter(TestCase):
         self.assertEqual((yield d), 1)
 
     @inlineCallbacks
+    def test_when_not_full_immediate(self):
+        limiter = DeferredLimiter(2)
+        d1 = limiter.add(Deferred())
+        self.assertEqual((yield limiter.when_not_full()), 1)
+
+    @inlineCallbacks
     def test_cancel(self):
         cancelled = []
 
