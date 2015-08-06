@@ -42,6 +42,15 @@ class ManualReadable(object):
         d.callback(self.reading.pop(0))
         return d
 
+    def err(self, e):
+        if not self.reading:
+            raise Exception("Nothing in `reading`")
+
+        self.reading.pop(0)
+        d = self.deferreds.pop(0)
+        d.errback(e)
+        return d
+
     def read(self):
         d = Deferred()
 
@@ -68,6 +77,15 @@ class ManualWritable(object):
         self.written.append(self.writing.pop(0))
         d = self.deferreds.pop(0)
         d.callback(None)
+        return d
+
+    def err(self, e):
+        if not self.writing:
+            raise Exception("Nothing in `reading`")
+
+        self.writing.pop(0)
+        d = self.deferreds.pop(0)
+        d.errback(e)
         return d
 
     def write(self, v):

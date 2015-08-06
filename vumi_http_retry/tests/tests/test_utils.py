@@ -2,7 +2,6 @@ from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.tests.utils import ManualReadable, ManualWritable
-from vumi_http_retry.utils import run_concurrently
 
 
 class TestManualReadable(TestCase):
@@ -49,6 +48,20 @@ class TestManualReadable(TestCase):
         r = ManualReadable([23])
         self.assertRaises(Exception, r.next)
 
+    @inlineCallbacks
+    def test_err(self):
+        r = ManualReadable([23])
+        e = Exception()
+        errs = []
+        d = r.read()
+        d.addErrback(lambda f: errs.append(f.value))
+        yield r.err(e)
+        self.assertEqual(errs, [e])
+
+    def test_err_empy_reading(self):
+        r = ManualReadable([23])
+        self.assertRaises(Exception, r.err, Exception())
+
 
 class TestManualWritable(TestCase):
     @inlineCallbacks
@@ -94,3 +107,17 @@ class TestManualWritable(TestCase):
     def test_next_empty_writing(self):
         w = ManualWritable()
         self.assertRaises(Exception, w.next)
+
+    @inlineCallbacks
+    def test_err(self):
+        w = ManualWritable()
+        e = Exception()
+        errs = []
+        d = w.write(23)
+        d.addErrback(lambda f: errs.append(f.value))
+        yield w.err(e)
+        self.assertEqual(errs, [e])
+
+    def test_err_empy_reading(self):
+        w = ManualWritable()
+        self.assertRaises(Exception, w.err)
