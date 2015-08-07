@@ -93,8 +93,6 @@ class RetrySenderWorker(BaseWorker):
 
     @inlineCallbacks
     def poll(self):
-        limiter = TaskLimiter(self.config.concurrency_limit)
-
         while True:
             if self.stopping:
                 break
@@ -104,9 +102,7 @@ class RetrySenderWorker(BaseWorker):
             if not req:
                 break
 
-            yield limiter.add(self.retry, req)
-
-        yield limiter.done()
+            yield self.retry(req)
 
     def on_error(self, err):
         log.err(err)
