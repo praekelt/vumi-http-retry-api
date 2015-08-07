@@ -59,6 +59,6 @@ class TestManualWritable(TestCase):
         yield w.err(e)
         self.assertEqual(errs, [e])
 
-    def test_err_empy_reading(self):
+    def test_err_empy_writing(self):
         w = ManualWritable()
         self.assertRaises(Exception, w.err)

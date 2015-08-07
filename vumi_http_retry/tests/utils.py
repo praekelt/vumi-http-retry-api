@@ -45,7 +45,7 @@ class ManualWritable(object):
 
     def err(self, e):
         if not self.writing:
-            raise Exception("Nothing in `reading`")
+            raise Exception("Nothing in `writing`")
 
         self.writing.pop(0)
         d = self.deferreds.pop(0)
