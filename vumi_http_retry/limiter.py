@@ -32,7 +32,9 @@ class TaskLimiter(object):
         Return a deferred which fires once all the scheduled to run and tasks
         currently running have completed.
         """
-        return DeferredList(list(self.tasks) + self.observers)
+        d = DeferredList(self.observers)
+        d.addCallback(lambda _: DeferredList(list(self.tasks)))
+        return d
 
     def _run(self, _, fn, *a, **kw):
         d = maybeDeferred(fn, *a, **kw)
