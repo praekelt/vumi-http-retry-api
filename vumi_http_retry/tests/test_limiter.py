@@ -1,5 +1,5 @@
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import Deferred, inlineCallbacks
+from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.tests.utils import ManualWritable
 from vumi_http_retry.limiter import TaskLimiter
