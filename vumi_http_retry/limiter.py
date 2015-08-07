@@ -1,10 +1,10 @@
-from twisted.internet.defer import Deferred, maybeDeferred
+from twisted.internet.defer import Deferred, maybeDeferred, DeferredList
 
 
 class TaskLimiter(object):
     """
     Keeps track of a limited list of pending tasks, allowing one to request for
-    a task to be added once there is a vacancy in the list.
+    a task to be added once there is a space in the list.
     """
     def __init__(self, limit, errback=None):
         self.limit = limit
@@ -17,11 +17,22 @@ class TaskLimiter(object):
         self.errback = errback
 
     def add(self, fn, *a, **kw):
+        """
+        Request for a new task to be run once there is space. Returns a
+        deferred which fires once the task has been started.
+        """
         observer = Deferred()
         self.observers.append(observer)
         observer.addCallback(self._run, fn, *a, **kw)
         self._refresh()
         return observer
+
+    def await_pending(self):
+        """
+        Return a deferred which fires once all the currently pending
+        tasks have completed.
+        """
+        return DeferredList(list(self.tasks))
 
     def _run(self, _, fn, *a, **kw):
         d = maybeDeferred(fn, *a, **kw)
