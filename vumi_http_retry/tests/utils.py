@@ -1,6 +1,6 @@
 from twisted.web.server import Site
 from twisted.internet import reactor
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 
 from klein import Klein
 
@@ -26,3 +26,34 @@ class ToyServer(object):
         yield server.setup(app)
         test.addCleanup(server.teardown)
         returnValue(server)
+
+
+class ManualWritable(object):
+    def __init__(self):
+        self.written = []
+        self.writing = []
+        self.deferreds = []
+
+    def next(self):
+        if not self.writing:
+            raise Exception("Nothing in `writing`")
+
+        self.written.append(self.writing.pop(0))
+        d = self.deferreds.pop(0)
+        d.callback(None)
+        return d
+
+    def err(self, e):
+        if not self.writing:
+            raise Exception("Nothing in `reading`")
+
+        self.writing.pop(0)
+        d = self.deferreds.pop(0)
+        d.errback(e)
+        return d
+
+    def write(self, v):
+        self.writing.append(v)
+        d = Deferred()
+        self.deferreds.append(d)
+        return d
