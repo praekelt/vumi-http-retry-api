@@ -1,4 +1,5 @@
-from twisted.internet.defer import Deferred, maybeDeferred, DeferredList
+from twisted.internet.defer import (
+    Deferred, maybeDeferred, DeferredList, inlineCallbacks)
 
 
 class TaskLimiter(object):
@@ -27,14 +28,14 @@ class TaskLimiter(object):
         self._refresh()
         return observer
 
+    @inlineCallbacks
     def done(self):
         """
         Return a deferred which fires once all the scheduled to run and tasks
         currently running have completed.
         """
-        d = DeferredList(self.observers)
-        d.addCallback(lambda _: DeferredList(list(self.tasks)))
-        return d
+        yield DeferredList(self.observers)
+        yield DeferredList(list(self.tasks))
 
     def _run(self, _, fn, *a, **kw):
         d = maybeDeferred(fn, *a, **kw)

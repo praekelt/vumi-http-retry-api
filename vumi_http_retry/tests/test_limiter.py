@@ -1,5 +1,5 @@
 from twisted.trial.unittest import TestCase
-from twisted.internet.defer import inlineCallbacks, Deferred
+from twisted.internet.defer import inlineCallbacks
 
 from vumi_http_retry.tests.utils import ManualWritable
 from vumi_http_retry.limiter import TaskLimiter
@@ -99,8 +99,7 @@ class TestTaskLimiter(TestCase):
         limiter.add(w.write, 3)
         limiter.add(w.write, 4)
 
-        d = Deferred()
-        limiter.done().chainDeferred(d)
+        d = limiter.done()
         self.assertFalse(d.called)
         self.assertEqual(w.writing, [1, 2])
         self.assertEqual(w.written, [])
@@ -135,8 +134,7 @@ class TestTaskLimiter(TestCase):
         limiter.add(w.write, 3)
         limiter.add(w.write, 4)
 
-        d = Deferred()
-        limiter.done().chainDeferred(d)
+        d = limiter.done()
         self.assertFalse(d.called)
         self.assertEqual(w.writing, [1, 2])
         self.assertEqual(w.written, [])
