@@ -28,6 +28,42 @@ class ToyServer(object):
         returnValue(server)
 
 
+class ManualReadable(object):
+    def __init__(self, values=None):
+        self.unread = values if values is not None else []
+        self.reading = []
+        self.deferreds = []
+
+    def next(self):
+        if not self.reading:
+            raise Exception("Nothing in `reading`")
+
+        d = self.deferreds.pop(0)
+        d.callback(self.reading.pop(0))
+        return d
+
+    def err(self, e):
+        if not self.reading:
+            raise Exception("Nothing in `reading`")
+
+        self.reading.pop(0)
+        d = self.deferreds.pop(0)
+        d.errback(e)
+        return d
+
+    def read(self):
+        d = Deferred()
+
+        if not self.unread:
+            d.callback(None)
+        else:
+            v = self.unread.pop(0)
+            self.reading.append(v)
+            self.deferreds.append(d)
+
+        return d
+
+
 class ManualWritable(object):
     def __init__(self):
         self.written = []
