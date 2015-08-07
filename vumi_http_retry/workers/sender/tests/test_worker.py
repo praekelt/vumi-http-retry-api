@@ -337,7 +337,7 @@ class TestRetrySenderWorker(TestCase):
         self.patch(RetrySenderWorker, 'next_req', staticmethod(r.read))
         self.patch(RetrySenderWorker, 'retry', staticmethod(w.write))
 
-        worker = yield self.mk_worker({
+        yield self.mk_worker({
             'frequency': 5,
             'concurrency_limit': 2,
         })
@@ -429,7 +429,7 @@ class TestRetrySenderWorker(TestCase):
         self.patch(RetrySenderWorker, 'next_req', staticmethod(r.read))
         self.patch(RetrySenderWorker, 'retry', staticmethod(w.write))
 
-        worker = yield self.mk_worker({
+        yield self.mk_worker({
             'frequency': 5,
             'concurrency_limit': 2,
         })
