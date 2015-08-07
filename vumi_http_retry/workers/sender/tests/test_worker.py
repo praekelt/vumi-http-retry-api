@@ -419,6 +419,58 @@ class TestRetrySenderWorker(TestCase):
         self.assertEqual(w.written, [1, 2, 3, 4, 5])
 
     @inlineCallbacks
+    def test_loop_retry_err(self):
+        e1 = Exception()
+        e3 = Exception()
+        errors = self.patch_on_error()
+
+        r = ManualReadable([1, 2, 3])
+        w = ManualWritable()
+        self.patch(RetrySenderWorker, 'next_req', staticmethod(r.read))
+        self.patch(RetrySenderWorker, 'retry', staticmethod(w.write))
+
+        worker = yield self.mk_worker({
+            'frequency': 5,
+            'concurrency_limit': 2,
+        })
+
+        # We've read all three requests from redis and are busy retrying the
+        # first two
+        yield r.next()
+        yield r.next()
+        yield r.next()
+        self.assertEqual(errors, [])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [1, 2])
+        self.assertEqual(w.written, [])
+
+        # Retry 1 throws an error, we catch it. We now have space for
+        # request 3.
+        yield w.err(e1)
+        self.assertEqual(errors, [e1])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [2, 3])
+        self.assertEqual(w.written, [])
+
+        # Retry 2 succeeds.
+        yield w.next()
+        self.assertEqual(errors, [e1])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [3])
+        self.assertEqual(w.written, [2])
+
+        # Retry 3 throws an error, we catch it.
+        yield w.err(e3)
+        self.assertEqual(errors, [e1, e3])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [2])
+
+    @inlineCallbacks
     def test_stop_after_pop_non_empty(self):
         """
         If the loop was stopped, but we've already asked redis for the next
