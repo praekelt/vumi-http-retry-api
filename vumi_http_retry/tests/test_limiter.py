@@ -90,7 +90,7 @@ class TestTaskLimiter(TestCase):
         self.assertEqual(w.written, [3])
 
     @inlineCallbacks
-    def test_await_pending(self):
+    def test_done(self):
         limiter = TaskLimiter(2)
         w = ManualWritable()
 
@@ -99,8 +99,7 @@ class TestTaskLimiter(TestCase):
         limiter.add(w.write, 3)
         limiter.add(w.write, 4)
 
-        # calls back when 1 and 2 are done
-        d = limiter.await_pending()
+        d = limiter.done()
         self.assertFalse(d.called)
         self.assertEqual(w.writing, [1, 2])
         self.assertEqual(w.written, [])
@@ -111,12 +110,9 @@ class TestTaskLimiter(TestCase):
         self.assertEqual(w.written, [1])
 
         yield w.next()
-        self.assertTrue(d.called)
+        self.assertFalse(d.called)
         self.assertEqual(w.writing, [3, 4])
         self.assertEqual(w.written, [1, 2])
-
-        # calls back when 3 and 4 are done
-        d = limiter.await_pending()
 
         yield w.next()
         self.assertFalse(d.called)
@@ -129,7 +125,7 @@ class TestTaskLimiter(TestCase):
         self.assertEqual(w.written, [1, 2, 3, 4])
 
     @inlineCallbacks
-    def test_await_pending_err(self):
+    def test_done_err(self):
         limiter = TaskLimiter(2)
         w = ManualWritable()
 
@@ -138,9 +134,7 @@ class TestTaskLimiter(TestCase):
         limiter.add(w.write, 3)
         limiter.add(w.write, 4)
 
-        # calls back when 1 and 2 are done
-        d = limiter.await_pending()
-
+        d = limiter.done()
         self.assertFalse(d.called)
         self.assertEqual(w.writing, [1, 2])
         self.assertEqual(w.written, [])
@@ -151,12 +145,9 @@ class TestTaskLimiter(TestCase):
         self.assertEqual(w.written, [])
 
         yield w.err(Exception())
-        self.assertTrue(d.called)
+        self.assertFalse(d.called)
         self.assertEqual(w.writing, [3, 4])
         self.assertEqual(w.written, [])
-
-        # calls back when 3 and 4 are written
-        d = limiter.await_pending()
 
         yield w.next()
         self.assertFalse(d.called)

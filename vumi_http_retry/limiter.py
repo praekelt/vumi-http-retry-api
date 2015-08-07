@@ -27,12 +27,12 @@ class TaskLimiter(object):
         self._refresh()
         return observer
 
-    def await_pending(self):
+    def done(self):
         """
-        Return a deferred which fires once all the currently pending
-        tasks have completed.
+        Return a deferred which fires once all the scheduled to run and tasks
+        currently running have completed.
         """
-        return DeferredList(list(self.tasks))
+        return DeferredList(list(self.tasks) + self.observers)
 
     def _run(self, _, fn, *a, **kw):
         d = maybeDeferred(fn, *a, **kw)
