@@ -20,6 +20,10 @@ class ConcurrentRunner(object):
         self.next = next_value
         self.run = run_task
 
+    def cancel(self):
+        while self.jobs:
+            self.jobs.pop().cancel()
+
     @inlineCallbacks
     def fill(self):
         yield self.lock.acquire()
