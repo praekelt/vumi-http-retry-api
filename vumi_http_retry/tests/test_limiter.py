@@ -30,11 +30,13 @@ class TestTaskLimiter(TestCase):
         self.assertEqual(w.writing, [1, 2])
         self.assertEqual(w.written, [])
 
+        self.assertFalse(d3.called)
         yield w.next()
         yield d3
         self.assertEqual(w.writing, [2, 3])
         self.assertEqual(w.written, [1])
 
+        self.assertFalse(d4.called)
         yield w.next()
         yield d4
         self.assertEqual(w.writing, [3, 4])
@@ -60,6 +62,8 @@ class TestTaskLimiter(TestCase):
         d3 = limiter.add(w.write, 3)
         d4 = limiter.add(w.write, 4)
 
+        self.assertFalse(d3.called)
+        self.assertFalse(d4.called)
         self.assertEqual(errs, [])
         self.assertEqual(w.writing, [1, 2])
         self.assertEqual(w.written, [])
