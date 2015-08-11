@@ -1,3 +1,4 @@
+from twisted.internet import reactor
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import (
@@ -181,6 +182,77 @@ class TestRetrySenderWorker(TestCase):
         })
 
         self.assertEqual((yield zitems(worker.redis, pending_key('test'))), [])
+
+    @inlineCallbacks
+    def test_retry_timeout_reschedule(self):
+        k = pending_key('test')
+        worker = yield self.mk_worker({'timeout': 3})
+        srv = yield ToyServer.from_test(self)
+        self.patch(reactor, 'callLater', worker.clock.callLater)
+
+        @srv.app.route('/foo')
+        def route(req):
+            return Deferred()
+
+        d = worker.retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 0,
+            'intervals': [10, 20],
+            'request': {
+                'url': "%s/foo" % (srv.url,),
+                'method': 'POST'
+            }
+        })
+
+        worker.clock.advance(2)
+        self.assertEqual((yield zitems(worker.redis, k)), [])
+
+        worker.clock.advance(4)
+        yield d
+
+        self.assertEqual((yield zitems(worker.redis, k)), [
+            (5 + 20, {
+                'owner_id': '1234',
+                'timestamp': 5,
+                'attempts': 1,
+                'intervals': [10, 20],
+                'request': {
+                    'url': "%s/foo" % (srv.url,),
+                    'method': 'POST'
+                }
+            }),
+        ])
+
+    @inlineCallbacks
+    def test_retry_timeout_end(self):
+        k = pending_key('test')
+        worker = yield self.mk_worker({'timeout': 3})
+        srv = yield ToyServer.from_test(self)
+        self.patch(reactor, 'callLater', worker.clock.callLater)
+
+        @srv.app.route('/foo')
+        def route(req):
+            return Deferred()
+
+        d = worker.retry({
+            'owner_id': '1234',
+            'timestamp': 5,
+            'attempts': 1,
+            'intervals': [10, 20],
+            'request': {
+                'url': "%s/foo" % (srv.url,),
+                'method': 'POST'
+            }
+        })
+
+        worker.clock.advance(2)
+        self.assertEqual((yield zitems(worker.redis, k)), [])
+
+        worker.clock.advance(4)
+        yield d
+
+        self.assertEqual((yield zitems(worker.redis, k)), [])
 
     @inlineCallbacks
     def test_retry_dec_req_count_success(self):
