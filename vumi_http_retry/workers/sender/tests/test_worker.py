@@ -69,6 +69,9 @@ class TestRetrySenderWorker(TestCase):
         self.patch(RetrySenderWorker, 'stop_reactor', c.inc)
         return c
 
+    def patch_reactor_call_later(self, clock):
+        self.patch(reactor, 'callLater', clock.callLater)
+
     @inlineCallbacks
     def test_retry(self):
         worker = yield self.mk_worker()
@@ -188,7 +191,7 @@ class TestRetrySenderWorker(TestCase):
         k = pending_key('test')
         worker = yield self.mk_worker({'timeout': 3})
         srv = yield ToyServer.from_test(self)
-        self.patch(reactor, 'callLater', worker.clock.callLater)
+        self.patch_reactor_call_later(worker.clock)
 
         @srv.app.route('/foo')
         def route(req):
@@ -229,7 +232,7 @@ class TestRetrySenderWorker(TestCase):
         k = pending_key('test')
         worker = yield self.mk_worker({'timeout': 3})
         srv = yield ToyServer.from_test(self)
-        self.patch(reactor, 'callLater', worker.clock.callLater)
+        self.patch_reactor_call_later(worker.clock)
 
         @srv.app.route('/foo')
         def route(req):
