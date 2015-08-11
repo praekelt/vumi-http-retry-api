@@ -3,6 +3,7 @@ from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, Deferred, succeed
+from twisted.web._newclient import ResponseNeverReceived
 
 from txredis.client import RedisClient
 from confmodel import Config
@@ -21,6 +22,9 @@ class RetrySenderConfig(Config):
     concurrency_limit = ConfigInt(
         "Number of requests that are allowed to run concurrently",
         default=100)
+    timeout = ConfigInt(
+        "The number of seconds to wait before timing out a retried request",
+        default=30)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
         default='vumi_http_retry')
@@ -88,9 +92,15 @@ class RetrySenderWorker(BaseWorker):
 
     @inlineCallbacks
     def retry(self, req):
-        resp = yield retry(req, **self.config.overrides)
+        timed_out = False
 
-        if should_retry(resp) and can_reattempt(req):
+        try:
+            resp = yield retry(
+                req, timeout=self.config.timeout, **self.config.overrides)
+        except ResponseNeverReceived:
+            timed_out = True
+
+        if (timed_out or should_retry(resp)) and can_reattempt(req):
             yield add_pending(self.redis, self.prefix, req)
         else:
             yield dec_req_count(self.redis, self.prefix, req['owner_id'])
