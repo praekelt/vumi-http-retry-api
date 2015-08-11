@@ -45,7 +45,10 @@ class TestRetryMaintainerWorker(TestCase):
         self.patch(ToyRetryMaintainerWorker, 'maintain', fn)
 
     @inlineCallbacks
-    def mk_worker(self, config):
+    def mk_worker(self, config=None):
+        if config is None:
+            config = {}
+
         config['redis_pefix'] = 'test'
         worker = ToyRetryMaintainerWorker(config)
 
