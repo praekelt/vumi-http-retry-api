@@ -79,7 +79,10 @@ def add_ready(redis, prefix, reqs, serialize=True):
 
 
 @inlineCallbacks
-def pop_pending_add_ready(redis, prefix, from_time, to_time, chunk_size=500):
+def pop_pending_add_ready(redis, prefix, from_time, to_time,
+                          chunk_size=500, tap=None):
+    tap = tap if tap is not None else lambda x: x
+
     while True:
         reqs = yield pop_pending(
             redis, prefix, from_time, to_time,
@@ -89,6 +92,7 @@ def pop_pending_add_ready(redis, prefix, from_time, to_time, chunk_size=500):
             break
 
         yield add_ready(redis, prefix, reqs, serialize=False)
+        tap(reqs)
 
 
 @inlineCallbacks

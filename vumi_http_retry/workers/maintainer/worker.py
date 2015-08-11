@@ -88,7 +88,8 @@ class RetryMaintainerWorker(BaseWorker):
         self.stop_reactor()
 
     def stop_reactor(self):
-        reactor.stop()
+        pass
+        #reactor.stop()
 
     def start(self):
         self.state = 'started'

@@ -295,6 +295,27 @@ class TestRetries(TestCase):
 
     @inlineCallbacks
     def test_pop_pending_add_ready(self):
+        k_p = pending_key('test')
+        k_r = ready_key('test')
+
+        for t in range(5, 40, 5):
+            yield add_pending(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        pending_reqs = [r for t, r in (yield zitems(self.redis, k_p))]
+
+        yield pop_pending_add_ready(self.redis, 'test', 0, 50)
+
+        self.assertEqual((yield lvalues(self.redis, k_r)), pending_reqs)
+        self.assertEqual((yield zitems(self.redis, k_p)), [])
+
+    @inlineCallbacks
+    def test_pop_pending_add_ready_chunks(self):
         calls = self.redis_spy('zrangebyscore')
 
         k = pending_key('test')
@@ -319,9 +340,9 @@ class TestRetries(TestCase):
         ])
 
     @inlineCallbacks
-    def test_pop_pending_add_ready_chunks(self):
+    def test_pop_pending_add_ready_chunks_tap(self):
         k_p = pending_key('test')
-        k_r = ready_key('test')
+        taps = []
 
         for t in range(5, 40, 5):
             yield add_pending(self.redis, 'test', {
@@ -332,12 +353,16 @@ class TestRetries(TestCase):
                 'request': {'foo': t}
             })
 
-        pending_reqs = [r for t, r in (yield zitems(self.redis, k_p))]
+        pending_reqs = yield self.redis.zrange(k_p, 0, -1)
 
-        yield pop_pending_add_ready(self.redis, 'test', 0, 50)
+        yield pop_pending_add_ready(
+            self.redis, 'test', 0, 50, chunk_size=3, tap=taps.append)
 
-        self.assertEqual((yield lvalues(self.redis, k_r)), pending_reqs)
-        self.assertEqual((yield zitems(self.redis, k_p)), [])
+        self.assertEqual(taps, [
+            pending_reqs[:3],
+            pending_reqs[3:6],
+            pending_reqs[6:],
+        ])
 
     @inlineCallbacks
     def test_pop_ready(self):
