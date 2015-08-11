@@ -88,3 +88,73 @@ class TestTaskLimiter(TestCase):
         self.assertEqual(errs, [e1, e2, e4])
         self.assertEqual(w.writing, [])
         self.assertEqual(w.written, [3])
+
+    @inlineCallbacks
+    def test_done(self):
+        limiter = TaskLimiter(2)
+        w = ManualWritable()
+
+        limiter.add(w.write, 1)
+        limiter.add(w.write, 2)
+        limiter.add(w.write, 3)
+        limiter.add(w.write, 4)
+
+        d = limiter.done()
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [1, 2])
+        self.assertEqual(w.written, [])
+
+        yield w.next()
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [2, 3])
+        self.assertEqual(w.written, [1])
+
+        yield w.next()
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [3, 4])
+        self.assertEqual(w.written, [1, 2])
+
+        yield w.next()
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [4])
+        self.assertEqual(w.written, [1, 2, 3])
+
+        yield w.next()
+        self.assertTrue(d.called)
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [1, 2, 3, 4])
+
+    @inlineCallbacks
+    def test_done_err(self):
+        limiter = TaskLimiter(2)
+        w = ManualWritable()
+
+        limiter.add(w.write, 1)
+        limiter.add(w.write, 2)
+        limiter.add(w.write, 3)
+        limiter.add(w.write, 4)
+
+        d = limiter.done()
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [1, 2])
+        self.assertEqual(w.written, [])
+
+        yield w.err(Exception())
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [2, 3])
+        self.assertEqual(w.written, [])
+
+        yield w.err(Exception())
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [3, 4])
+        self.assertEqual(w.written, [])
+
+        yield w.next()
+        self.assertFalse(d.called)
+        self.assertEqual(w.writing, [4])
+        self.assertEqual(w.written, [3])
+
+        yield w.err(Exception())
+        self.assertTrue(d.called)
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [3])
