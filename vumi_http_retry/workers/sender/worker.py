@@ -9,6 +9,7 @@ from confmodel import Config
 from confmodel.fields import ConfigText, ConfigInt, ConfigDict
 
 from vumi_http_retry.worker import BaseWorker
+from vumi_http_retry.limiter import TaskLimiter
 from vumi_http_retry.retries import (
     dec_req_count, pop_ready, retry, should_retry, can_reattempt, add_pending)
 
@@ -17,6 +18,9 @@ class RetrySenderConfig(Config):
     frequency = ConfigInt(
         "How often the ready set should be polled",
         default=60)
+    concurrency_limit = ConfigInt(
+        "Number of requests that are allowed to run concurrently",
+        default=100)
     redis_prefix = ConfigText(
         "Prefix for redis keys",
         default='vumi_http_retry')
@@ -93,19 +97,26 @@ class RetrySenderWorker(BaseWorker):
 
     @inlineCallbacks
     def poll(self):
+        limiter = TaskLimiter(
+            self.config.concurrency_limit,
+            errback=self.on_error)
+
         while True:
             if self.stopping:
                 break
 
             req = yield self.next_req()
 
-            if not req:
+            if req is None:
                 break
 
-            yield self.retry(req)
+            yield limiter.add(self.retry, req)
+
+        yield limiter.done()
 
     def on_error(self, err):
         log.err(err)
+        reactor.stop()
 
     def start(self):
         self.state = 'started'

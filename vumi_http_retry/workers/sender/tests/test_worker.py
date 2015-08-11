@@ -1,4 +1,3 @@
-from twisted.python.failure import Failure
 from twisted.internet.task import Clock
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import (
@@ -8,7 +7,8 @@ from vumi_http_retry.workers.sender.worker import RetrySenderWorker
 from vumi_http_retry.retries import (
     set_req_count, get_req_count, pending_key, ready_key, add_ready)
 from vumi_http_retry.tests.redis import zitems, lvalues, delete
-from vumi_http_retry.tests.utils import ToyServer
+from vumi_http_retry.tests.utils import (
+    ToyServer, ManualReadable, ManualWritable)
 
 
 class TestRetrySenderWorker(TestCase):
@@ -329,6 +329,146 @@ class TestRetrySenderWorker(TestCase):
 
         worker.clock.advance(5)
         self.assertEqual(errors, [e])
+
+    @inlineCallbacks
+    def test_loop_concurrency_limit(self):
+        r = ManualReadable([1, 2, 3, 4, 5])
+        w = ManualWritable()
+        self.patch(RetrySenderWorker, 'next_req', staticmethod(r.read))
+        self.patch(RetrySenderWorker, 'retry', staticmethod(w.write))
+
+        yield self.mk_worker({
+            'frequency': 5,
+            'concurrency_limit': 2,
+        })
+
+        # We haven't yet started any retries
+        self.assertEqual(r.unread, [2, 3, 4, 5])
+        self.assertEqual(r.reading, [1])
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [])
+
+        # We've started retrying request 1 and still have space
+        yield r.next()
+        self.assertEqual(r.unread, [3, 4, 5])
+        self.assertEqual(r.reading, [2])
+        self.assertEqual(w.writing, [1])
+        self.assertEqual(w.written, [])
+
+        # We've started retrying request 2 and are at capacity
+        yield r.next()
+        self.assertEqual(r.unread, [4, 5])
+        self.assertEqual(r.reading, [3])
+        self.assertEqual(w.writing, [1, 2])
+        self.assertEqual(w.written, [])
+
+        # We've read request 3 from redis but haven't retried it yet, since we
+        # are waiting for request 1 and 2 to complete
+        yield r.next()
+        self.assertEqual(r.unread, [4, 5])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [1, 2])
+        self.assertEqual(w.written, [])
+
+        # Request 1 has completed, so we have space to start retrying
+        # request 3 and ask redis for request 4.
+        yield w.next()
+        self.assertEqual(r.unread, [5])
+        self.assertEqual(r.reading, [4])
+        self.assertEqual(w.writing, [2, 3])
+        self.assertEqual(w.written, [1])
+
+        # We've read request 4 from redis but haven't retried it yet, since we
+        # are waiting for request 2 and 3 to complete
+        yield r.next()
+        self.assertEqual(r.unread, [5])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [2, 3])
+        self.assertEqual(w.written, [1])
+
+        # Request 2 has completed, so we have space to start retrying
+        # request 3 and ask redis for request 5.
+        yield w.next()
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [5])
+        self.assertEqual(w.writing, [3, 4])
+        self.assertEqual(w.written, [1, 2])
+
+        # Request 3 and 4 complete while we are waiting for request 5
+        # from redis
+        yield w.next()
+        yield w.next()
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [5])
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [1, 2, 3, 4])
+
+        # We've read request 5 from redis and started retrying it
+        yield r.next()
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [5])
+        self.assertEqual(w.written, [1, 2, 3, 4])
+
+        # We've retried request 5. Redis says we have nothing more to read, so
+        # we are done.
+        yield w.next()
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [1, 2, 3, 4, 5])
+
+    @inlineCallbacks
+    def test_loop_retry_err(self):
+        e1 = Exception()
+        e3 = Exception()
+        errors = self.patch_on_error()
+
+        r = ManualReadable([1, 2, 3])
+        w = ManualWritable()
+        self.patch(RetrySenderWorker, 'next_req', staticmethod(r.read))
+        self.patch(RetrySenderWorker, 'retry', staticmethod(w.write))
+
+        yield self.mk_worker({
+            'frequency': 5,
+            'concurrency_limit': 2,
+        })
+
+        # We've read all three requests from redis and are busy retrying the
+        # first two
+        yield r.next()
+        yield r.next()
+        yield r.next()
+        self.assertEqual(errors, [])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [1, 2])
+        self.assertEqual(w.written, [])
+
+        # Retry 1 throws an error, we catch it. We now have space for
+        # request 3.
+        yield w.err(e1)
+        self.assertEqual(errors, [e1])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [2, 3])
+        self.assertEqual(w.written, [])
+
+        # Retry 2 succeeds.
+        yield w.next()
+        self.assertEqual(errors, [e1])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [3])
+        self.assertEqual(w.written, [2])
+
+        # Retry 3 throws an error, we catch it.
+        yield w.err(e3)
+        self.assertEqual(errors, [e1, e3])
+        self.assertEqual(r.unread, [])
+        self.assertEqual(r.reading, [])
+        self.assertEqual(w.writing, [])
+        self.assertEqual(w.written, [2])
 
     @inlineCallbacks
     def test_stop_after_pop_non_empty(self):
