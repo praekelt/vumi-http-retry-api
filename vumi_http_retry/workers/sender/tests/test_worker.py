@@ -9,7 +9,7 @@ from vumi_http_retry.retries import (
     set_req_count, get_req_count, pending_key, ready_key, add_ready)
 from vumi_http_retry.tests.redis import zitems, lvalues, delete
 from vumi_http_retry.tests.utils import (
-    Counter, ToyServer, ManualReadable, ManualWritable)
+    Counter, ToyServer, ManualReadable, ManualWritable, pop_all)
 
 
 class TestRetrySenderWorker(TestCase):
@@ -27,6 +27,7 @@ class TestRetrySenderWorker(TestCase):
         config.setdefault('overrides', {}).update({'persistent': False})
 
         worker = RetrySenderWorker(config)
+        self.patch_reactor_stop()
         yield worker.setup(Clock())
         self.addCleanup(self.teardown_worker, worker)
 
@@ -72,9 +73,20 @@ class TestRetrySenderWorker(TestCase):
     def patch_reactor_call_later(self, clock):
         self.patch(reactor, 'callLater', clock.callLater)
 
+    def patch_log(self):
+        msgs = []
+
+        def logger(*msg):
+            msgs.append(msg)
+
+        self.patch(RetrySenderWorker, 'log', staticmethod(logger))
+        return msgs
+
     @inlineCallbacks
     def test_retry(self):
+        msgs = self.patch_log()
         worker = yield self.mk_worker()
+        yield worker.stop()
         srv = yield ToyServer.from_test(self)
         reqs = []
 
@@ -82,7 +94,7 @@ class TestRetrySenderWorker(TestCase):
         def route(req):
             reqs.append(req)
 
-        yield worker.retry({
+        req = {
             'owner_id': '1234',
             'timestamp': 5,
             'attempts': 0,
@@ -91,7 +103,15 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
+
+        pop_all(msgs)
+        yield worker.retry(req)
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req),
+            ('Retry successful (200)', req),
+        ])
 
         [req] = reqs
         self.assertEqual(req.method, 'POST')
@@ -99,14 +119,16 @@ class TestRetrySenderWorker(TestCase):
 
     @inlineCallbacks
     def test_retry_reschedule(self):
+        msgs = self.patch_log()
         worker = yield self.mk_worker()
         srv = yield ToyServer.from_test(self)
+        yield worker.stop()
 
         @srv.app.route('/foo')
         def route(req):
             req.setResponseCode(500)
 
-        yield worker.retry({
+        req1 = {
             'owner_id': '1234',
             'timestamp': 5,
             'attempts': 0,
@@ -115,9 +137,9 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
 
-        yield worker.retry({
+        req2 = {
             'owner_id': '1234',
             'timestamp': 10,
             'attempts': 0,
@@ -126,7 +148,24 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
+
+        pop_all(msgs)
+        yield worker.retry(req1)
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req1),
+            ('Retry failed (500)', req1),
+            ('Rescheduling retry', req1),
+        ])
+
+        yield worker.retry(req2)
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req2),
+            ('Retry failed (500)', req2),
+            ('Rescheduling retry', req2),
+        ])
 
         pending = yield zitems(worker.redis, pending_key('test'))
 
@@ -155,14 +194,16 @@ class TestRetrySenderWorker(TestCase):
 
     @inlineCallbacks
     def test_retry_end(self):
+        msgs = self.patch_log()
         worker = yield self.mk_worker()
         srv = yield ToyServer.from_test(self)
+        yield worker.stop()
 
         @srv.app.route('/foo')
         def route(req):
             req.setResponseCode(500)
 
-        yield worker.retry({
+        req1 = {
             'owner_id': '1234',
             'timestamp': 5,
             'attempts': 1,
@@ -171,9 +212,9 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
 
-        yield worker.retry({
+        req2 = {
             'owner_id': '1234',
             'timestamp': 10,
             'attempts': 2,
@@ -182,22 +223,41 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
+
+        pop_all(msgs)
+        yield worker.retry(req1)
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req1),
+            ('Retry failed (500)', req1),
+            ('No remaining retry intervals, discarding request', req1),
+        ])
+
+        yield worker.retry(req2)
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req2),
+            ('Retry failed (500)', req2),
+            ('No remaining retry intervals, discarding request', req2),
+        ])
 
         self.assertEqual((yield zitems(worker.redis, pending_key('test'))), [])
 
     @inlineCallbacks
     def test_retry_timeout_reschedule(self):
         k = pending_key('test')
+        msgs = self.patch_log()
         worker = yield self.mk_worker({'timeout': 3})
         srv = yield ToyServer.from_test(self)
         self.patch_reactor_call_later(worker.clock)
+        yield worker.stop()
 
         @srv.app.route('/foo')
         def route(req):
             return Deferred()
 
-        d = worker.retry({
+        req = {
             'owner_id': '1234',
             'timestamp': 5,
             'attempts': 0,
@@ -206,13 +266,21 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
 
+        pop_all(msgs)
+        d = worker.retry(req)
         worker.clock.advance(2)
         self.assertEqual((yield zitems(worker.redis, k)), [])
 
         worker.clock.advance(4)
         yield d
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req),
+            ('Retry timed out', req),
+            ('Rescheduling retry', req),
+        ])
 
         self.assertEqual((yield zitems(worker.redis, k)), [
             (5 + 20, {
@@ -230,15 +298,17 @@ class TestRetrySenderWorker(TestCase):
     @inlineCallbacks
     def test_retry_timeout_end(self):
         k = pending_key('test')
+        msgs = self.patch_log()
         worker = yield self.mk_worker({'timeout': 3})
         srv = yield ToyServer.from_test(self)
         self.patch_reactor_call_later(worker.clock)
+        yield worker.stop()
 
         @srv.app.route('/foo')
         def route(req):
             return Deferred()
 
-        d = worker.retry({
+        req = {
             'owner_id': '1234',
             'timestamp': 5,
             'attempts': 1,
@@ -247,13 +317,22 @@ class TestRetrySenderWorker(TestCase):
                 'url': "%s/foo" % (srv.url,),
                 'method': 'POST'
             }
-        })
+        }
+
+        pop_all(msgs)
+        d = worker.retry(req)
 
         worker.clock.advance(2)
         self.assertEqual((yield zitems(worker.redis, k)), [])
 
         worker.clock.advance(4)
         yield d
+
+        self.assertEqual(pop_all(msgs), [
+            ('Retrying request', req),
+            ('Retry timed out', req),
+            ('No remaining retry intervals, discarding request', req),
+        ])
 
         self.assertEqual((yield zitems(worker.redis, k)), [])
 
@@ -335,6 +414,7 @@ class TestRetrySenderWorker(TestCase):
     @inlineCallbacks
     def test_loop(self):
         k = ready_key('test')
+        msgs = self.patch_log()
         retries = self.patch_retry()
         worker = yield self.mk_worker({'frequency': 5})
 
@@ -348,26 +428,59 @@ class TestRetrySenderWorker(TestCase):
 
         yield add_ready(worker.redis, 'test', reqs)
 
+        self.assertEqual(pop_all(msgs), [
+            ('Polling for requests to retry',),
+            ('Retrieving next request from ready set',),
+            ('Ready set is empty, rechecking on next poll',),
+        ])
+
         worker.clock.advance(5)
         req = yield retries.get()
         self.assertEqual(req, reqs[0])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
 
+        self.assertEqual(pop_all(msgs), [
+            ('Polling for requests to retry',),
+            ('Retrieving next request from ready set',),
+            ('Scheduling request for retrying', reqs[0]),
+            ('Retrieving next request from ready set',),
+        ])
+
         req = yield retries.get()
         self.assertEqual(req, reqs[1])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[2:])
+
+        self.assertEqual(pop_all(msgs), [
+            ('Scheduling request for retrying', reqs[1]),
+            ('Retrieving next request from ready set',),
+        ])
 
         req = yield retries.get()
         self.assertEqual(req, reqs[2])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[3:])
 
+        self.assertEqual(pop_all(msgs), [
+            ('Scheduling request for retrying', reqs[2]),
+            ('Retrieving next request from ready set',),
+        ])
+
         req = yield retries.get()
         self.assertEqual(req, reqs[3])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[4:])
 
+        self.assertEqual(pop_all(msgs), [
+            ('Scheduling request for retrying', reqs[3]),
+            ('Retrieving next request from ready set',),
+        ])
+
         req = yield retries.get()
         self.assertEqual(req, reqs[4])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+        self.assertEqual(pop_all(msgs), [
+            ('Scheduling request for retrying', reqs[4]),
+            ('Retrieving next request from ready set',),
+        ])
 
         worker.clock.advance(10)
 
@@ -381,15 +494,31 @@ class TestRetrySenderWorker(TestCase):
 
         yield add_ready(worker.redis, 'test', reqs)
 
+        self.assertEqual(pop_all(msgs), [
+            ('Ready set is empty, rechecking on next poll',),
+        ])
+
         worker.clock.advance(5)
         req = yield retries.get()
         self.assertEqual(req, reqs[0])
         self.assertEqual((yield lvalues(worker.redis, k)), reqs[1:])
 
+        self.assertEqual(pop_all(msgs), [
+            ('Polling for requests to retry',),
+            ('Retrieving next request from ready set',),
+            ('Scheduling request for retrying', reqs[0]),
+            ('Retrieving next request from ready set',),
+        ])
+
         worker.clock.advance(5)
         req = yield retries.get()
         self.assertEqual(req, reqs[1])
         self.assertEqual((yield lvalues(worker.redis, k)), [])
+
+        self.assertEqual(pop_all(msgs), [
+            ('Scheduling request for retrying', reqs[1]),
+            ('Retrieving next request from ready set',),
+        ])
 
     @inlineCallbacks
     def test_loop_error(self):
@@ -591,8 +720,8 @@ class TestRetrySenderWorker(TestCase):
 
     @inlineCallbacks
     def test_on_error(self):
-        stops = self.patch_reactor_stop()
         worker = yield self.mk_worker()
+        stops = self.patch_reactor_stop()
         yield worker.stop()
 
         self.assertEqual(self.flushLoggedErrors(), [])
