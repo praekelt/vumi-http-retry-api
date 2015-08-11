@@ -5,7 +5,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from vumi_http_retry.workers.maintainer.worker import RetryMaintainerWorker
 from vumi_http_retry.retries import pending_key, ready_key, add_pending
 from vumi_http_retry.tests.redis import zitems, lvalues, delete
-from vumi_http_retry.tests.utils import Counter
+from vumi_http_retry.tests.utils import Counter, pop_all
 
 
 class ToyRetryMaintainerWorker(RetryMaintainerWorker):
@@ -40,6 +40,11 @@ class TestRetryMaintainerWorker(TestCase):
         c = Counter()
         self.patch(ToyRetryMaintainerWorker, 'stop_reactor', c.inc)
         return c
+
+    def patch_log(self):
+        msgs = []
+        self.patch(ToyRetryMaintainerWorker, 'log', staticmethod(msgs.append))
+        return msgs
 
     def patch_maintain(self, fn):
         self.patch(ToyRetryMaintainerWorker, 'maintain', fn)
@@ -114,6 +119,8 @@ class TestRetryMaintainerWorker(TestCase):
         k_p = pending_key('test')
         k_r = ready_key('test')
 
+        msgs = self.patch_log()
+
         worker = yield self.mk_worker({
             'redis_prefix': 'test',
             'frequency': 5,
@@ -131,6 +138,10 @@ class TestRetryMaintainerWorker(TestCase):
         pending = yield zitems(worker.redis, pending_key('test'))
         pending_reqs = [v for t, v in pending]
 
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+        ])
+
         worker.maintains.pop()
 
         worker.clock.advance(5)
@@ -138,36 +149,66 @@ class TestRetryMaintainerWorker(TestCase):
         self.assertEqual((yield lvalues(worker.redis, k_r)), [])
         self.assertEqual((yield zitems(worker.redis, k_p)), pending)
 
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+        ])
+
         worker.clock.advance(5)
         yield worker.maintains.pop()
         self.assertEqual((yield lvalues(worker.redis, k_r)), [])
         self.assertEqual((yield zitems(worker.redis, k_p)), pending)
+
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+        ])
 
         worker.clock.advance(5)
         yield worker.maintains.pop()
         self.assertEqual((yield lvalues(worker.redis, k_r)), pending_reqs[:1])
         self.assertEqual((yield zitems(worker.redis, k_p)), pending[1:])
 
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+            '1 request(s) moved from pending to ready',
+        ])
+
         worker.clock.advance(5)
         yield worker.maintains.pop()
         self.assertEqual((yield lvalues(worker.redis, k_r)), pending_reqs[:2])
         self.assertEqual((yield zitems(worker.redis, k_p)), pending[2:])
+
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+            '1 request(s) moved from pending to ready',
+        ])
 
         worker.clock.advance(5)
         yield worker.maintains.pop()
         self.assertEqual((yield lvalues(worker.redis, k_r)), pending_reqs[:3])
         self.assertEqual((yield zitems(worker.redis, k_p)), pending[3:])
 
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+            '1 request(s) moved from pending to ready',
+        ])
+
         worker.clock.advance(5)
         yield worker.maintains.pop()
         self.assertEqual((yield lvalues(worker.redis, k_r)), pending_reqs)
         self.assertEqual((yield zitems(worker.redis, k_p)), [])
 
+        self.assertEqual(pop_all(msgs), [
+            'Checking for requests to move from pending to ready',
+            '1 request(s) moved from pending to ready',
+        ])
+
         self.assertEqual(worker.maintains, [])
 
         worker.stop()
         worker.clock.advance(5)
+
         self.assertEqual(worker.maintains, [])
+        self.assertEqual(pop_all(msgs), [])
 
     @inlineCallbacks
     def test_loop_error(self):
