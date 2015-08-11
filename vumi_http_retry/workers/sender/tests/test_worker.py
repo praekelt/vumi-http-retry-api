@@ -520,7 +520,7 @@ class TestRetrySenderWorker(TestCase):
         worker = yield self.mk_worker()
         yield worker.stop()
 
-        self.flushLoggedErrors()
+        self.assertEqual(self.flushLoggedErrors(), [])
         self.assertEqual(stops.value, 0)
 
         err = Exception()
