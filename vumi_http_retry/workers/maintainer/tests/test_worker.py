@@ -5,6 +5,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from vumi_http_retry.workers.maintainer.worker import RetryMaintainerWorker
 from vumi_http_retry.retries import pending_key, ready_key, add_pending
 from vumi_http_retry.tests.redis import zitems, lvalues, delete
+from vumi_http_retry.tests.utils import Counter
 
 
 class ToyRetryMaintainerWorker(RetryMaintainerWorker):
@@ -35,11 +36,19 @@ class TestRetryMaintainerWorker(TestCase):
         self.patch(ToyRetryMaintainerWorker, 'on_error', fn)
         return errors
 
+    def patch_reactor_stop(self):
+        c = Counter()
+        self.patch(ToyRetryMaintainerWorker, 'stop_reactor', c.inc)
+        return c
+
     def patch_maintain(self, fn):
         self.patch(ToyRetryMaintainerWorker, 'maintain', fn)
 
     @inlineCallbacks
-    def mk_worker(self, config):
+    def mk_worker(self, config=None):
+        if config is None:
+            config = {}
+
         config['redis_pefix'] = 'test'
         worker = ToyRetryMaintainerWorker(config)
 
@@ -205,3 +214,18 @@ class TestRetryMaintainerWorker(TestCase):
         yield worker.redis.set('test.foo', 'bar')
         yield worker.redis.select(1)
         self.assertEqual((yield worker.redis.get('test.foo')), 'bar')
+
+    @inlineCallbacks
+    def test_on_error(self):
+        stops = self.patch_reactor_stop()
+        worker = yield self.mk_worker()
+        yield worker.stop()
+
+        self.assertEqual(self.flushLoggedErrors(), [])
+        self.assertEqual(stops.value, 0)
+
+        err = Exception()
+        worker.on_error(err)
+
+        self.assertEqual([e.value for e in self.flushLoggedErrors()], [err])
+        self.assertEqual(stops.value, 1)
