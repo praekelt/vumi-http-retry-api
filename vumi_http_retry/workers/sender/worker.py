@@ -116,6 +116,9 @@ class RetrySenderWorker(BaseWorker):
 
     def on_error(self, err):
         log.err(err)
+        self.stop_reactor()
+
+    def stop_reactor(self):
         reactor.stop()
 
     def start(self):

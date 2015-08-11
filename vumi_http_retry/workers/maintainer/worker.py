@@ -1,3 +1,4 @@
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.task import LoopingCall
@@ -84,6 +85,10 @@ class RetryMaintainerWorker(BaseWorker):
 
     def on_error(self, err):
         log.err(err)
+        self.stop_reactor()
+
+    def stop_reactor(self):
+        reactor.stop()
 
     def start(self):
         self.state = 'started'

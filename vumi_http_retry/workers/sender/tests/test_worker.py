@@ -8,7 +8,7 @@ from vumi_http_retry.retries import (
     set_req_count, get_req_count, pending_key, ready_key, add_ready)
 from vumi_http_retry.tests.redis import zitems, lvalues, delete
 from vumi_http_retry.tests.utils import (
-    ToyServer, ManualReadable, ManualWritable)
+    Counter, ToyServer, ManualReadable, ManualWritable)
 
 
 class TestRetrySenderWorker(TestCase):
@@ -62,6 +62,11 @@ class TestRetrySenderWorker(TestCase):
 
         self.patch(RetrySenderWorker, 'on_error', staticmethod(on_error))
         return errors
+
+    def patch_reactor_stop(self):
+        c = Counter()
+        self.patch(RetrySenderWorker, 'stop_reactor', c.inc)
+        return c
 
     @inlineCallbacks
     def test_retry(self):
@@ -508,3 +513,18 @@ class TestRetrySenderWorker(TestCase):
         yield worker.redis.set('test.foo', 'bar')
         yield worker.redis.select(1)
         self.assertEqual((yield worker.redis.get('test.foo')), 'bar')
+
+    @inlineCallbacks
+    def test_on_error(self):
+        stops = self.patch_reactor_stop()
+        worker = yield self.mk_worker()
+        yield worker.stop()
+
+        self.flushLoggedErrors()
+        self.assertEqual(stops.value, 0)
+
+        err = Exception()
+        worker.on_error(err)
+
+        self.assertEqual([e.value for e in self.flushLoggedErrors()], [err])
+        self.assertEqual(stops.value, 1)

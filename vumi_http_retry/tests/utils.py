@@ -93,3 +93,11 @@ class ManualWritable(object):
         d = Deferred()
         self.deferreds.append(d)
         return d
+
+
+class Counter(object):
+    def __init__(self):
+        self.value = 0
+
+    def inc(self):
+        self.value = self.value + 1
