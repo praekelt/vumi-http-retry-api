@@ -114,7 +114,7 @@ def retry(req, **overrides):
     return treq.request(**opts)
 
 
-def should_retry(resp):
+def retry_failed(resp):
     return 500 <= resp.code < 600
 
 
