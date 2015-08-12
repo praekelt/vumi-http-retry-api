@@ -7,7 +7,7 @@ from twisted.internet.defer import inlineCallbacks
 from vumi_http_retry.retries import (
     pending_key, ready_key, inc_req_count, dec_req_count,
     get_req_count, set_req_count, add_pending, pop_pending,
-    add_ready, pop_pending_add_ready, pop_ready, retry, should_retry,
+    add_ready, pop_pending_add_ready, pop_ready, retry, retry_failed,
     can_reattempt)
 from vumi_http_retry.tests.utils import ToyServer
 from vumi_http_retry.tests.redis import create_client, zitems, lvalues, delete
@@ -295,6 +295,27 @@ class TestRetries(TestCase):
 
     @inlineCallbacks
     def test_pop_pending_add_ready(self):
+        k_p = pending_key('test')
+        k_r = ready_key('test')
+
+        for t in range(5, 40, 5):
+            yield add_pending(self.redis, 'test', {
+                'owner_id': '1234',
+                'timestamp': t,
+                'attempts': 0,
+                'intervals': [10],
+                'request': {'foo': t}
+            })
+
+        pending_reqs = [r for t, r in (yield zitems(self.redis, k_p))]
+
+        yield pop_pending_add_ready(self.redis, 'test', 0, 50)
+
+        self.assertEqual((yield lvalues(self.redis, k_r)), pending_reqs)
+        self.assertEqual((yield zitems(self.redis, k_p)), [])
+
+    @inlineCallbacks
+    def test_pop_pending_add_ready_chunks(self):
         calls = self.redis_spy('zrangebyscore')
 
         k = pending_key('test')
@@ -319,9 +340,9 @@ class TestRetries(TestCase):
         ])
 
     @inlineCallbacks
-    def test_pop_pending_add_ready_chunks(self):
+    def test_pop_pending_add_ready_chunks_tap(self):
         k_p = pending_key('test')
-        k_r = ready_key('test')
+        taps = []
 
         for t in range(5, 40, 5):
             yield add_pending(self.redis, 'test', {
@@ -332,12 +353,16 @@ class TestRetries(TestCase):
                 'request': {'foo': t}
             })
 
-        pending_reqs = [r for t, r in (yield zitems(self.redis, k_p))]
+        pending_reqs = yield self.redis.zrange(k_p, 0, -1)
 
-        yield pop_pending_add_ready(self.redis, 'test', 0, 50)
+        yield pop_pending_add_ready(
+            self.redis, 'test', 0, 50, chunk_size=3, tap=taps.append)
 
-        self.assertEqual((yield lvalues(self.redis, k_r)), pending_reqs)
-        self.assertEqual((yield zitems(self.redis, k_p)), [])
+        self.assertEqual(taps, [
+            pending_reqs[:3],
+            pending_reqs[3:6],
+            pending_reqs[6:],
+        ])
 
     @inlineCallbacks
     def test_pop_ready(self):
@@ -520,7 +545,7 @@ class TestRetries(TestCase):
         })
 
     @inlineCallbacks
-    def test_should_retry(self):
+    def test_retry_failed(self):
         srv = yield ToyServer.from_test(self)
 
         @srv.app.route('/<int:code>')
@@ -530,13 +555,13 @@ class TestRetries(TestCase):
         def send(code):
             return treq.get("%s/%s" % (srv.url, code), persistent=False)
 
-        self.assertFalse(should_retry((yield send(200))))
-        self.assertFalse(should_retry((yield send(201))))
-        self.assertFalse(should_retry((yield send(400))))
-        self.assertFalse(should_retry((yield send(404))))
-        self.assertTrue(should_retry((yield send(500))))
-        self.assertTrue(should_retry((yield send(504))))
-        self.assertTrue(should_retry((yield send(599))))
+        self.assertFalse(retry_failed((yield send(200))))
+        self.assertFalse(retry_failed((yield send(201))))
+        self.assertFalse(retry_failed((yield send(400))))
+        self.assertFalse(retry_failed((yield send(404))))
+        self.assertTrue(retry_failed((yield send(500))))
+        self.assertTrue(retry_failed((yield send(504))))
+        self.assertTrue(retry_failed((yield send(599))))
 
     def test_can_reattempt(self):
         req = {

@@ -1,5 +1,6 @@
 import time
 
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, returnValue
@@ -55,6 +56,12 @@ class RetryApiWorker(BaseWorker):
     def teardown(self):
         self.redis.transport.loseConnection()
 
+    def log(self, msg, req=None):
+        if req is not None:
+            log.msg("%s: %r" % (msg, req))
+        else:
+            log.msg(msg)
+
     @inlineCallbacks
     def req_limit_reached(self, owner_id):
         count = yield get_req_count(self.redis, self.prefix, owner_id)
@@ -98,22 +105,30 @@ class RetryApiWorker(BaseWorker):
     @inlineCallbacks
     def route_requests(self, req, body):
         owner_id = req.getHeader('x-owner-id')
+        req_limit = self.config.request_limit
 
         if (yield self.req_limit_reached(owner_id)):
+            self.log(
+                "Request limit reached for %s at a request count of %d"
+                % (owner_id, req_limit))
+
             returnValue(response(req, {
                 'errors': [{
                     'type': 'too_many_requests',
-                    'message': "Only 10000 unfinished requests are "
-                               "allowed per owner"
+                    'message': (
+                        "Only %d unfinished requests are allowed per owner"
+                        % (req_limit))
                 }]
             }, code=429))
         else:
-            yield add_pending(self.redis, self.prefix, {
+            data = {
                 'owner_id': req.getHeader('x-owner-id'),
                 'timestamp': time.time(),
                 'request': body['request'],
                 'intervals': body['intervals']
-            })
+            }
 
+            self.log("Adding request to pending set", data)
+            yield add_pending(self.redis, self.prefix, data)
             yield inc_req_count(self.redis, self.prefix, owner_id)
             returnValue(response(req, {}))

@@ -1,3 +1,4 @@
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.task import LoopingCall
@@ -75,15 +76,31 @@ class RetryMaintainerWorker(BaseWorker):
 
     @inlineCallbacks
     def maintain(self):
+        self.log("Checking for requests to move from pending to ready")
+
         yield pop_pending_add_ready(
             self.redis,
             self.config.redis_prefix,
             from_time=0,
             to_time=self.clock.seconds(),
-            chunk_size=self.config.pop_chunk_size)
+            chunk_size=self.config.pop_chunk_size,
+            tap=self.each_chunk)
+
+    def each_chunk(self, reqs):
+        self.log("%d request(s) moved from pending to ready" % (len(reqs),))
+
+    def log(self, msg):
+        log.msg(msg)
+
+    def log_err(self, err):
+        log.err(err)
 
     def on_error(self, err):
-        log.err(err)
+        self.log_err(err)
+        self.stop_reactor()
+
+    def stop_reactor(self):
+        reactor.stop()
 
     def start(self):
         self.state = 'started'
