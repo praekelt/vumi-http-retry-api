@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="vumi-http-retry-api",
-    version="0.1.2",
+    version="0.1.3",
     url='http://github.com/praekelt/vumi-http-retry-api',
     license='BSD',
     description="API for retrying HTTP requests",
