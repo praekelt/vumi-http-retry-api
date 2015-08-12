@@ -12,6 +12,7 @@ from vumi_http_retry.workers.api.worker import RetryApiWorker
 from vumi_http_retry.retries import (
     pending_key, get_req_count, set_req_count)
 from vumi_http_retry.tests.redis import zitems, delete
+from vumi_http_retry.tests.utils import pop_all
 
 
 class TestRetryApiWorker(TestCase):
@@ -40,7 +41,7 @@ class TestRetryApiWorker(TestCase):
     def start_server(self):
         self.app = RetryApiWorker({
             'redis_prefix': 'test',
-            'request_limit': 10000,
+            'request_limit': 500,
         })
         yield self.app.setup()
         self.server = yield reactor.listenTCP(0, Site(self.app.app.resource()))
@@ -62,6 +63,15 @@ class TestRetryApiWorker(TestCase):
             persistent=False,
             headers=headers)
 
+    def patch_log(self):
+        msgs = []
+
+        def logger(*msg):
+            msgs.append(msg)
+
+        self.patch(RetryApiWorker, 'log', staticmethod(logger))
+        return msgs
+
     @inlineCallbacks
     def test_health(self):
         resp = yield self.get('/health')
@@ -70,11 +80,13 @@ class TestRetryApiWorker(TestCase):
 
     @inlineCallbacks
     def test_requests(self):
+        msgs = self.patch_log()
         k = pending_key('test')
 
         self.assertEqual(
             (yield get_req_count(self.app.redis, 'test', '1234')), 0)
 
+        pop_all(msgs)
         resp = yield self.post('/requests/', {
             'intervals': [30, 90],
             'request': {
@@ -85,6 +97,18 @@ class TestRetryApiWorker(TestCase):
 
         self.assertEqual(resp.code, http.OK)
         self.assertEqual((yield resp.content()), json.dumps({}))
+
+        self.assertEqual(pop_all(msgs), [
+            ("Adding request to pending set", {
+                'owner_id': '1234',
+                'timestamp': 10,
+                'intervals': [30, 90],
+                'request': {
+                    'url': 'http://www.example.org',
+                    'method': 'GET',
+                },
+            })
+        ])
 
         self.assertEqual(
             (yield get_req_count(self.app.redis, 'test', '1234')), 1)
@@ -104,8 +128,10 @@ class TestRetryApiWorker(TestCase):
 
     @inlineCallbacks
     def test_requests_limit_reached(self):
-        yield set_req_count(self.app.redis, 'test', '1234', 10000)
+        msgs = self.patch_log()
+        yield set_req_count(self.app.redis, 'test', '1234', 500)
 
+        pop_all(msgs)
         resp = yield self.post('/requests/', {
             'intervals': [30, 90],
             'request': {
@@ -114,11 +140,15 @@ class TestRetryApiWorker(TestCase):
             }
         }, headers={'X-Owner-ID': '1234'})
 
+        self.assertEqual(pop_all(msgs), [
+            ("Request limit reached for 1234 at a request count of 500",)
+        ])
+
         self.assertEqual(resp.code, 429)
         self.assertEqual(json.loads((yield resp.content())), {
             'errors': [{
                 'type': 'too_many_requests',
-                'message': "Only 10000 unfinished requests are "
+                'message': "Only 500 unfinished requests are "
                            "allowed per owner"
             }]
         })

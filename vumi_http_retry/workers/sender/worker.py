@@ -12,7 +12,7 @@ from confmodel.fields import ConfigText, ConfigInt, ConfigDict
 from vumi_http_retry.worker import BaseWorker
 from vumi_http_retry.limiter import TaskLimiter
 from vumi_http_retry.retries import (
-    dec_req_count, pop_ready, retry, should_retry, can_reattempt, add_pending)
+    dec_req_count, pop_ready, retry, retry_failed, can_reattempt, add_pending)
 
 
 class RetrySenderConfig(Config):
@@ -87,26 +87,61 @@ class RetrySenderWorker(BaseWorker):
         yield self.stop()
         self.redis.transport.loseConnection()
 
+    def log(self, msg, req=None):
+        if req is not None:
+            log.msg("%s: %r" % (msg, req))
+        else:
+            log.msg(msg)
+
+    def log_err(self, err):
+        log.err(err)
+
     def next_req(self):
         return pop_ready(self.redis, self.prefix)
 
     @inlineCallbacks
     def retry(self, req):
-        timed_out = False
+        self.log("Retrying request", req)
 
         try:
             resp = yield retry(
                 req, timeout=self.config.timeout, **self.config.overrides)
         except ResponseNeverReceived:
-            timed_out = True
+            yield self.handle_retry_timeout(req)
+            return
 
-        if (timed_out or should_retry(resp)) and can_reattempt(req):
-            yield add_pending(self.redis, self.prefix, req)
+        if retry_failed(resp):
+            yield self.handle_retry_fail(req, resp)
         else:
-            yield dec_req_count(self.redis, self.prefix, req['owner_id'])
+            yield self.handle_retry_success(req, resp)
+
+    def handle_retry_timeout(self, req):
+        self.log("Retry timed out", req)
+        return self.reschedule_or_discard(req)
+
+    def handle_retry_success(self, req, resp):
+        self.log("Retry successful (%s)" % (resp.code), req)
+        return self.retry_complete(req)
+
+    def handle_retry_fail(self, req, resp):
+        self.log("Retry failed (%s)" % (resp.code,), req)
+        return self.reschedule_or_discard(req)
+
+    def reschedule_or_discard(self, req):
+        if can_reattempt(req):
+            self.log("Rescheduling retry", req)
+            return add_pending(self.redis, self.prefix, req)
+        else:
+            self.log("No remaining retry intervals, discarding request", req)
+            return self.retry_complete(req)
+
+    def retry_complete(self, req):
+        return dec_req_count(self.redis, self.prefix, req['owner_id'])
 
     @inlineCallbacks
     def poll(self):
+        self.log("Polling for requests to retry")
+
         limiter = TaskLimiter(
             self.config.concurrency_limit,
             errback=self.on_error)
@@ -115,17 +150,20 @@ class RetrySenderWorker(BaseWorker):
             if self.stopping:
                 break
 
+            self.log("Retrieving next request from ready set")
             req = yield self.next_req()
 
             if req is None:
+                self.log("Ready set is empty, rechecking on next poll")
                 break
 
+            self.log("Scheduling request for retrying", req)
             yield limiter.add(self.retry, req)
 
         yield limiter.done()
 
     def on_error(self, err):
-        log.err(err)
+        self.log_err(err)
         self.stop_reactor()
 
     def stop_reactor(self):

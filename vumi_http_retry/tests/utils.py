@@ -5,6 +5,12 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from klein import Klein
 
 
+def pop_all(values):
+    results = values[:]
+    del values[:]
+    return results
+
+
 class ToyServer(object):
     @inlineCallbacks
     def setup(self, app=None):

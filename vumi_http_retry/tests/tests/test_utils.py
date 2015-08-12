@@ -1,7 +1,14 @@
 from twisted.trial.unittest import TestCase
 from twisted.internet.defer import inlineCallbacks
 
-from vumi_http_retry.tests.utils import ManualReadable, ManualWritable
+from vumi_http_retry.tests.utils import ManualReadable, ManualWritable, pop_all
+
+
+def TestUtils(TestCase):
+    def test_pop_all(self):
+        values = [1, 2, 3]
+        self.assertEqual(pop_all(values), [1, 2, 3])
+        self.assertEqual(values, [])
 
 
 class TestManualReadable(TestCase):
