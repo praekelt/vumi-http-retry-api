@@ -3,6 +3,7 @@ from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.internet.protocol import ClientCreator
 from twisted.internet.defer import inlineCallbacks, Deferred, succeed
+from twisted.internet.error import ConnectingCancelledError
 from twisted.web._newclient import ResponseNeverReceived
 
 from txredis.client import RedisClient
@@ -106,7 +107,7 @@ class RetrySenderWorker(BaseWorker):
         try:
             resp = yield retry(
                 req, timeout=self.config.timeout, **self.config.overrides)
-        except ResponseNeverReceived:
+        except (ResponseNeverReceived, ConnectingCancelledError):
             yield self.handle_retry_timeout(req)
             return
 
